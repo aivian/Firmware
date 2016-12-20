@@ -209,6 +209,7 @@ static uint8_t main_state_before_rtl = commander_state_s::MAIN_STATE_MAX;
 static unsigned _last_mission_instance = 0;
 struct manual_control_setpoint_s sp_man = {};		///< the current manual control setpoint
 static manual_control_setpoint_s _last_sp_man = {};	///< the manual control setpoint valid at the last mode switch
+static uint8_t _last_sp_man_arm_switch = 0;
 
 static struct vtol_vehicle_status_s vtol_status = {};
 static struct cpuload_s cpuload = {};
@@ -1297,6 +1298,7 @@ int commander_thread_main(int argc, char *argv[])
 	param_t _param_low_bat_act = param_find("COM_LOW_BAT_ACT");
 	param_t _param_offboard_loss_timeout = param_find("COM_OF_LOSS_T");
 	param_t _param_arm_without_gps = param_find("COM_ARM_WO_GPS");
+	param_t _param_arm_switch_is_button = param_find("COM_ARM_SWISBTN");
 
 	param_t _param_fmode_1 = param_find("COM_FLTMODE1");
 	param_t _param_fmode_2 = param_find("COM_FLTMODE2");
@@ -1642,6 +1644,8 @@ int commander_thread_main(int argc, char *argv[])
 	param_get(_param_autostart_id, &autostart_id);
 	param_get(_param_rc_in_off, &rc_in_off);
 	param_get(_param_arm_without_gps, &arm_without_gps);
+	int32_t arm_switch_is_button = 0;
+	param_get(_param_arm_switch_is_button, &arm_switch_is_button);
 	can_arm_without_gps = (arm_without_gps == 1);
 	status.rc_input_mode = rc_in_off;
 	if (is_hil_setup(autostart_id)) {
@@ -1782,6 +1786,7 @@ int commander_thread_main(int argc, char *argv[])
 			param_get(_param_offboard_loss_act, &offboard_loss_act);
 			param_get(_param_offboard_loss_rc_act, &offboard_loss_rc_act);
 			param_get(_param_arm_without_gps, &arm_without_gps);
+			param_get(_param_arm_switch_is_button, &arm_switch_is_button);
 			can_arm_without_gps = (arm_without_gps == 1);
 
 			/* Autostart id */
@@ -2555,18 +2560,31 @@ int commander_thread_main(int argc, char *argv[])
 
 			status.rc_signal_lost = false;
 
-			/* check if left stick is in lower left position and we are in MANUAL, Rattitude, or AUTO_READY mode or (ASSIST mode and landed) -> disarm
-			 * do it only for rotary wings in manual mode or fixed wing if landed */
-			if ((status.is_rotary_wing || (!status.is_rotary_wing && land_detector.landed)) && status.rc_input_mode != vehicle_status_s::RC_IN_MODE_OFF &&
-			    (status.arming_state == vehicle_status_s::ARMING_STATE_ARMED || status.arming_state == vehicle_status_s::ARMING_STATE_ARMED_ERROR) &&
-			    (internal_state.main_state == commander_state_s::MAIN_STATE_MANUAL ||
-			    	internal_state.main_state == commander_state_s::MAIN_STATE_ACRO ||
-			    	internal_state.main_state == commander_state_s::MAIN_STATE_STAB ||
-			    	internal_state.main_state == commander_state_s::MAIN_STATE_RATTITUDE ||
-			    	land_detector.landed) &&
-			    sp_man.r < -STICK_ON_OFF_LIMIT && sp_man.z < 0.1f) {
+			const bool in_armed_state = status.arming_state == vehicle_status_s::ARMING_STATE_ARMED || status.arming_state == vehicle_status_s::ARMING_STATE_ARMED_ERROR;
+			const bool arm_button_pressed = arm_switch_is_button == 1 && sp_man.arm_switch == manual_control_setpoint_s::SWITCH_POS_ON;
 
-				if (stick_off_counter > rc_arm_hyst) {
+			/* DISARM
+			 * check if left stick is in lower left position or arm button is pushed or arm switch has transition from arm to disarm
+			 * and we are in MANUAL, Rattitude, or AUTO_READY mode or (ASSIST mode and landed)
+			 * do it only for rotary wings in manual mode or fixed wing if landed */
+			const bool stick_in_lower_left = sp_man.r < -STICK_ON_OFF_LIMIT && sp_man.z < 0.1f;
+			const bool arm_switch_to_disarm_transition =  arm_switch_is_button == 0 &&
+					_last_sp_man_arm_switch == manual_control_setpoint_s::SWITCH_POS_ON &&
+					sp_man.arm_switch == manual_control_setpoint_s::SWITCH_POS_OFF;
+
+			if (in_armed_state &&
+				status.rc_input_mode != vehicle_status_s::RC_IN_MODE_OFF &&
+				(status.is_rotary_wing || (!status.is_rotary_wing && land_detector.landed)) &&
+				(stick_in_lower_left || arm_button_pressed || arm_switch_to_disarm_transition) ) {
+
+				if (internal_state.main_state != commander_state_s::MAIN_STATE_MANUAL &&
+						internal_state.main_state != commander_state_s::MAIN_STATE_ACRO &&
+						internal_state.main_state != commander_state_s::MAIN_STATE_STAB &&
+						internal_state.main_state != commander_state_s::MAIN_STATE_RATTITUDE &&
+						!land_detector.landed) {
+					print_reject_arm("NOT DISARMING: Not in manual mode or landed yet.");
+
+				} else if ((stick_off_counter == rc_arm_hyst && stick_on_counter < rc_arm_hyst) || arm_switch_to_disarm_transition) {
 					/* disarm to STANDBY if ARMED or to STANDBY_ERROR if ARMED_ERROR */
 					arming_state_t new_arming_state = (status.arming_state == vehicle_status_s::ARMING_STATE_ARMED ? vehicle_status_s::ARMING_STATE_STANDBY :
 									   vehicle_status_s::ARMING_STATE_STANDBY_ERROR);
@@ -2585,20 +2603,25 @@ int commander_thread_main(int argc, char *argv[])
 					if (arming_ret == TRANSITION_CHANGED) {
 						arming_state_changed = true;
 					}
-
-					stick_off_counter = 0;
-
-				} else {
-					stick_off_counter++;
 				}
-
-			} else {
+				stick_off_counter++;
+			/* do not reset the counter when holding the arm button longer than needed */
+			} else if (!(arm_switch_is_button == 1 && sp_man.arm_switch == manual_control_setpoint_s::SWITCH_POS_ON)) {
 				stick_off_counter = 0;
 			}
 
-			/* check if left stick is in lower right position and we're in MANUAL mode -> arm */
-			if (sp_man.r > STICK_ON_OFF_LIMIT && sp_man.z < 0.1f && status.rc_input_mode != vehicle_status_s::RC_IN_MODE_OFF ) {
-				if (stick_on_counter > rc_arm_hyst) {
+			/* ARM
+			 * check if left stick is in lower right position or arm button is pushed or arm switch has transition from disarm to arm
+			 * and we're in MANUAL mode */
+			const bool stick_in_lower_right = (sp_man.r > STICK_ON_OFF_LIMIT && sp_man.z < 0.1f);
+			const bool arm_switch_to_arm_transition = arm_switch_is_button == 0 &&
+					_last_sp_man_arm_switch == manual_control_setpoint_s::SWITCH_POS_OFF &&
+					sp_man.arm_switch == manual_control_setpoint_s::SWITCH_POS_ON;
+
+			if (!in_armed_state &&
+				status.rc_input_mode != vehicle_status_s::RC_IN_MODE_OFF &&
+				(stick_in_lower_right || arm_button_pressed || arm_switch_to_arm_transition) ) {
+				if ((stick_on_counter == rc_arm_hyst && stick_off_counter < rc_arm_hyst) || arm_switch_to_arm_transition) {
 
 					/* we check outside of the transition function here because the requirement
 					 * for being in manual mode only applies to manual arming actions.
@@ -2638,15 +2661,14 @@ int commander_thread_main(int argc, char *argv[])
 							print_reject_arm("NOT ARMING: Preflight checks failed");
 						}
 					}
-					stick_on_counter = 0;
-
-				} else {
-					stick_on_counter++;
 				}
-
-			} else {
+				stick_on_counter++;
+			/* do not reset the counter when holding the arm button longer than needed */
+			} else if (!(arm_switch_is_button == 1 && sp_man.arm_switch == manual_control_setpoint_s::SWITCH_POS_ON)) {
 				stick_on_counter = 0;
 			}
+
+			_last_sp_man_arm_switch = sp_man.arm_switch;
 
 			if (arming_ret == TRANSITION_CHANGED) {
 				if (status.arming_state == vehicle_status_s::ARMING_STATE_ARMED) {
@@ -2696,7 +2718,6 @@ int commander_thread_main(int argc, char *argv[])
 				armed.lockdown = false;
 			}
 			/* no else case: do not change lockdown flag in unconfigured case */
-
 		} else {
 			if (!status_flags.rc_input_blocked && !status.rc_signal_lost) {
 				mavlink_log_critical(&mavlink_log_pub, "MANUAL CONTROL LOST (at t=%llums)", hrt_absolute_time() / 1000);

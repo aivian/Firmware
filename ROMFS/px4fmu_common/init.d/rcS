@@ -4,6 +4,25 @@
 #
 #  NOTE: COMMENT LINES ARE REMOVED BEFORE STORED IN ROMFS.
 #
+# UART mapping on FMUv1/2/3/4:
+#
+# UART1			/dev/ttyS0		IO debug
+# USART2		/dev/ttyS1		TELEM1 (flow control)
+# USART3		/dev/ttyS2		TELEM2 (flow control)
+# UART4
+# UART7							CONSOLE
+# UART8							SERIAL4
+#
+#
+# UART mapping on FMUv5:
+#
+# UART1			/dev/ttyS0		GPS
+# USART2		/dev/ttyS1		TELEM1 (flow control)
+# USART3		/dev/ttyS2		TELEM2 (flow control)
+# UART4			/dev/ttyS3		?
+# USART6		/dev/ttyS4		TELEM3 (flow control)
+# UART7			/dev/ttyS5		?
+# UART8			/dev/ttyS6		CONSOLE
 
 #
 # Start CDC/ACM serial driver
@@ -611,7 +630,7 @@ then
 		fi
 		if param compare SYS_COMPANION 1500000
 		then
-			mavlink start -d $MAVLINK_COMPANION_DEVICE -b 1500000 -m onboard -r 100000 -x
+			mavlink start -d $MAVLINK_COMPANION_DEVICE -b 1500000 -m onboard -r 10000 -x
 		fi
 	fi
 
@@ -622,8 +641,9 @@ then
 	#
 	if param greater UAVCAN_ENABLE 0
 	then
-		if uavcan start fw
+		if uavcan start
 		then
+			uavcan start fw
 		else
 			tone_alarm $TUNE_ERR
 		fi
@@ -791,7 +811,7 @@ then
 			then
 				set MAV_TYPE 2
 			fi
-			if [ $MIXER == quad_w -o $MIXER == sk450_deadcat ]
+			if [ $MIXER == quad_w -o $MIXER == quad_dc ]
 			then
 				set MAV_TYPE 2
 			fi
