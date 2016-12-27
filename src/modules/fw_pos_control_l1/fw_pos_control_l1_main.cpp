@@ -2339,10 +2339,10 @@ FixedwingPositionControl::task_main()
 					_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max_rad, _parameters.man_pitch_max_rad);
 				}
 
-				if (!(_control_mode.flag_control_offboard_enabled &&
-				      !(_control_mode.flag_control_position_enabled ||
+				if (!_control_mode.flag_control_offboard_enabled || 
+				        _control_mode.flag_control_position_enabled ||
 					_control_mode.flag_control_velocity_enabled ||
-					_control_mode.flag_control_acceleration_enabled))) {
+					_control_mode.flag_control_acceleration_enabled) {
 
 					/* lazily publish the setpoint only once available */
 					if (_attitude_sp_pub != nullptr) {
