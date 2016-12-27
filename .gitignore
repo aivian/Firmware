@@ -20,6 +20,8 @@
 Archives/*
 Build/*
 Testing/
+Binaries/*
+Meta/*
 build/*
 build_*/
 core
@@ -77,6 +79,7 @@ vectorcontrol/
 
 # CLion ignores
 .idea
+cmake-build-*/
 
 # gcov code coverage
 coverage-html/

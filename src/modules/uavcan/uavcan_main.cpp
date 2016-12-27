@@ -53,7 +53,6 @@
 #include <systemlib/mixer/mixer.h>
 #include <systemlib/board_serial.h>
 #include <systemlib/scheduling_priorities.h>
-#include <systemlib/git_version.h>
 #include <version/version.h>
 #include <arch/board/board.h>
 #include <arch/chip/chip.h>
@@ -110,6 +109,8 @@ UavcanNode::UavcanNode(uavcan::ICanDriver &can_driver, uavcan::ISystemClock &sys
 	if (res < 0) {
 		std::abort();
 	}
+	/* _server_command_sem use case is a signal */
+	px4_sem_setprotocol(&_server_command_sem, SEM_PRIO_NONE);
 
 	if (_perfcnt_node_spin_elapsed == nullptr) {
 		errx(1, "uavcan: couldn't allocate _perfcnt_node_spin_elapsed");
@@ -181,14 +182,14 @@ int UavcanNode::getHardwareVersion(uavcan::protocol::HardwareVersion &hwver)
 	int rv = -1;
 
 	if (UavcanNode::instance()) {
-		if (!std::strncmp(HW_ARCH, "PX4FMU_V1", 9)) {
+		if (!std::strncmp(px4_board_name(), "PX4FMU_V1", 9)) {
 			hwver.major = 1;
 
-		} else if (!std::strncmp(HW_ARCH, "PX4FMU_V2", 9)) {
+		} else if (!std::strncmp(px4_board_name(), "PX4FMU_V2", 9)) {
 			hwver.major = 2;
 
 		} else {
-			; // All other values of HW_ARCH resolve to zero
+			; // All other values of px4_board_name() resolve to zero
 		}
 
 		uint8_t udid[12] = {};  // Someone seems to love magic numbers
@@ -618,10 +619,9 @@ void UavcanNode::fill_node_info()
 	/* software version */
 	uavcan::protocol::SoftwareVersion swver;
 
-	// Extracting the first 8 hex digits of GIT_VERSION and converting them to int
+	// Extracting the first 8 hex digits of the git hash and converting them to int
 	char fw_git_short[9] = {};
-	std::memmove(fw_git_short, px4_git_version, 8);
-	assert(fw_git_short[8] == '\0');
+	std::memmove(fw_git_short, px4_firmware_version_string(), 8);
 	char *end = nullptr;
 	swver.vcs_commit = std::strtol(fw_git_short, &end, 16);
 	swver.optional_field_flags |= swver.OPTIONAL_FIELD_FLAG_VCS_COMMIT;

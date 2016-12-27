@@ -61,7 +61,7 @@
 #define debug(fmt, args...)	do { } while(0)
 //#define debug(fmt, args...)	do { printf("[mixer] " fmt "\n", ##args); } while(0)
 //#include <debug.h>
-//#define debug(fmt, args...)	lowsyslog(fmt "\n", ##args)
+//#define debug(fmt, args...)	syslog(fmt "\n", ##args)
 
 /*
  * Clockwise: 1
@@ -166,6 +166,9 @@ MultirotorMixer::from_text(Mixer::ControlCallback control_cb, uintptr_t cb_handl
 
 	} else if (!strcmp(geomname, "4w")) {
 		geometry = MultirotorGeometry::QUAD_WIDE;
+
+	} else if (!strcmp(geomname, "4s")) {
+		geometry = MultirotorGeometry::QUAD_S250AQ;
 
 	} else if (!strcmp(geomname, "4dc")) {
 		geometry = MultirotorGeometry::QUAD_DEADCAT;

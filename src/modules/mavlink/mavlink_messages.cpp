@@ -445,7 +445,7 @@ protected:
 						} else {
 							(void)fputs("\n", _fp);
 #ifdef __PX4_NUTTX
-							fsync(_fp->fs_filedes);
+							fsync(fileno(_fp));
 #endif
 						}
 
@@ -466,7 +466,7 @@ protected:
 							fputs(msg.text, _fp);
 							fputs("\n", _fp);
 #ifdef __PX4_NUTTX
-							fsync(_fp->fs_filedes);
+							fsync(fileno(_fp));
 #endif
 
 						} else {
@@ -1931,10 +1931,13 @@ protected:
 				msg.y = home.y;
 				msg.z = home.z;
 
-				msg.q[0] = 1.0f;
-				msg.q[1] = 0.0f;
-				msg.q[2] = 0.0f;
-				msg.q[3] = 0.0f;
+				matrix::Eulerf euler(0.0f, 0.0f, home.yaw);
+				matrix::Quatf q(euler);
+
+				msg.q[0] = q(0);
+				msg.q[1] = q(1);
+				msg.q[2] = q(2);
+				msg.q[3] = q(3);
 
 				msg.approach_x = 0.0f;
 				msg.approach_y = 0.0f;
@@ -3381,10 +3384,14 @@ protected:
 		{
 			struct vehicle_global_position_s global_pos;
 			updated |= _global_pos_sub->update(&_global_pos_time, &global_pos);
-			msg.altitude_amsl = (_global_pos_time > 0) ? global_pos.alt : NAN;
-			global_alt = global_pos.alt;
+			if (_global_pos_time != 0) {
+				msg.altitude_amsl = global_pos.alt;
+				global_alt = global_pos.alt;
+			} else {
+				msg.altitude_amsl = NAN;
+			}
 
-			if (global_pos.terrain_alt_valid) {
+			if (_global_pos_time != 0 && global_pos.terrain_alt_valid) {
 				msg.altitude_terrain = global_pos.terrain_alt;
 				msg.bottom_clearance = global_pos.alt - global_pos.terrain_alt;
 
@@ -3416,10 +3423,10 @@ protected:
 			struct home_position_s home;
 			updated |= _home_sub->update(&_home_time, &home);
 
-			if (_global_pos_time > 0 and _home_time > 0) {
+			if (_global_pos_time > 0 && _home_time > 0) {
 				msg.altitude_relative = global_alt - home.alt;
 
-			} else if (_local_pos_time > 0 and _home_time > 0) {
+			} else if (_local_pos_time > 0 && _home_time > 0) {
 				msg.altitude_relative = msg.altitude_local;
 
 			} else {
@@ -3796,6 +3803,100 @@ protected:
 	}
 };
 
+
+class MavlinkStreamGroundTruth : public MavlinkStream
+{
+public:
+	const char *get_name() const
+	{
+		return MavlinkStreamGroundTruth::get_name_static();
+	}
+
+	static const char *get_name_static()
+	{
+		return "GROUND_TRUTH";
+	}
+
+	static uint16_t get_id_static()
+	{
+		return MAVLINK_MSG_ID_HIL_STATE_QUATERNION;
+	}
+
+	uint16_t get_id()
+	{
+		return get_id_static();
+	}
+
+	static MavlinkStream *new_instance(Mavlink *mavlink)
+	{
+		return new MavlinkStreamGroundTruth(mavlink);
+	}
+
+	unsigned get_size()
+	{
+		return (_att_time > 0 || _gpos_time > 0) ? MAVLINK_MSG_ID_HIL_STATE_QUATERNION_LEN +
+			MAVLINK_NUM_NON_PAYLOAD_BYTES : 0;
+	}
+
+private:
+	MavlinkOrbSubscription *_att_sub;
+	MavlinkOrbSubscription *_gpos_sub;
+	uint64_t _att_time;
+	uint64_t _gpos_time;
+	struct vehicle_attitude_s _att;
+	struct vehicle_global_position_s _gpos;
+
+	/* do not allow top copying this class */
+	MavlinkStreamGroundTruth(MavlinkStreamGroundTruth &);
+	MavlinkStreamGroundTruth &operator = (const MavlinkStreamGroundTruth &);
+
+protected:
+	explicit MavlinkStreamGroundTruth(Mavlink *mavlink) : MavlinkStream(mavlink),
+		_att_sub(_mavlink->add_orb_subscription(ORB_ID(vehicle_attitude_groundtruth))),
+		_gpos_sub(_mavlink->add_orb_subscription(ORB_ID(vehicle_global_position_groundtruth))),
+		_att_time(0),
+		_gpos_time(0),
+		_att(),
+		_gpos()
+	{}
+
+	void send(const hrt_abstime t)
+	{
+		bool att_updated = _att_sub->update(&_att_time, &_att);
+		bool gpos_updated = _gpos_sub->update(&_gpos_time, &_gpos);
+
+		if (att_updated || gpos_updated) {
+
+			mavlink_hil_state_quaternion_t msg = {};
+
+			if (att_updated) {
+				msg.attitude_quaternion[0] = _att.q[0];
+				msg.attitude_quaternion[1] = _att.q[1];
+				msg.attitude_quaternion[2] = _att.q[2];
+				msg.attitude_quaternion[3] = _att.q[3];
+				msg.rollspeed = _att.rollspeed;
+				msg.pitchspeed = _att.pitchspeed;
+				msg.yawspeed = _att.yawspeed;
+			}
+
+			if (gpos_updated) {
+				msg.lat = _gpos.lat;
+				msg.lon = _gpos.lon;
+				msg.alt = _gpos.alt;
+				msg.vx = _gpos.vel_n;
+				msg.vy = _gpos.vel_e;
+				msg.vz = _gpos.vel_d;
+				msg.ind_airspeed = 0;
+				msg.true_airspeed = 0;
+				msg.xacc = 0;
+				msg.yacc = 0;
+				msg.zacc = 0;
+			}
+			mavlink_msg_hil_state_quaternion_send_struct(_mavlink->get_channel(), &msg);
+		}
+	}
+};
+
 const StreamListItem *streams_list[] = {
 	new StreamListItem(&MavlinkStreamHeartbeat::new_instance, &MavlinkStreamHeartbeat::get_name_static, &MavlinkStreamHeartbeat::get_id_static),
 	new StreamListItem(&MavlinkStreamStatustext::new_instance, &MavlinkStreamStatustext::get_name_static, &MavlinkStreamStatustext::get_id_static),
@@ -3843,5 +3944,6 @@ const StreamListItem *streams_list[] = {
 	new StreamListItem(&MavlinkStreamWind::new_instance, &MavlinkStreamWind::get_name_static, &MavlinkStreamWind::get_id_static),
 	new StreamListItem(&MavlinkStreamMountOrientation::new_instance, &MavlinkStreamMountOrientation::get_name_static, &MavlinkStreamMountOrientation::get_id_static),
 	new StreamListItem(&MavlinkStreamHighLatency::new_instance, &MavlinkStreamHighLatency::get_name_static, &MavlinkStreamWind::get_id_static),
+	new StreamListItem(&MavlinkStreamGroundTruth::new_instance, &MavlinkStreamGroundTruth::get_name_static, &MavlinkStreamGroundTruth::get_id_static),
 	nullptr
 };
