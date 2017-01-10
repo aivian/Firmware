@@ -125,6 +125,9 @@ public:
 
 	static int        unadvertise(orb_advert_t handle);
 
+	static int16_t topic_advertised(const orb_metadata *meta, int priority);
+	//static int16_t topic_unadvertised(const orb_metadata *meta, int priority);
+
 	/**
 	 * processes a request for add subscription from remote
 	 * @param rateInHz
@@ -335,5 +338,3 @@ private:
 #endif
 	hrt_abstime       _last_statistics_output;
 };
-
-

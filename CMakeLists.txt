@@ -117,6 +117,19 @@
 #
 #=============================================================================
 
+if("${CMAKE_VERSION}" VERSION_LESS 2.8.0)
+	message("Not a valid CMake version")
+	message("On Ubuntu 16.04, install or upgrade via:")
+	message("	sudo apt-get install cmake")
+	message("")
+	message("Official website:")
+	message("	wget https://cmake.org/files/v3.4/cmake-3.4.3-Linux-x86_64.sh")
+	message("	chmod +x cmake-3.4.3-Linux-x86_64.sh")
+	message("	sudo mkdir /opt/cmake-3.4.3")
+	message("	sudo ./cmake-3.4.3-Linux-x86_64.sh --prefix=/opt/cmake-3.4.3 --exclude-subdir")
+	message("	export PATH=/opt/cmake-3.4.3/bin:$$PATH")
+endif()
+
 # Warning: Changing this modifies CMake's internal workings
 # and leads to wrong toolchain detection
 cmake_minimum_required(VERSION 2.8 FATAL_ERROR)
@@ -128,10 +141,6 @@ execute_process(
 	COMMAND Tools/check_submodules.sh
 	WORKING_DIRECTORY ${PX4_SOURCE_DIR}
 	)
-
-# Use clang
-#SET (CMAKE_C_COMPILER /usr/bin/clang-3.6)
-#SET (CMAKE_CXX_COMPILER /usr/bin/clang++-3.6)
 
 #=============================================================================
 # parameters
@@ -160,6 +169,16 @@ list(GET config_args 2 LABEL)
 set(target_name "${OS}-${BOARD}-${LABEL}")
 
 message(STATUS "${target_name}")
+
+#  The Url for the elf file for crash logging
+
+if (DEFINED ENV{BUILD_URI})
+	set (BUILD_URI $ENV{BUILD_URI})
+else()
+	set (BUILD_URI "localhost")
+endif()
+
+add_definitions(-DBUILD_URI=${BUILD_URI})
 
 # Define GNU standard installation directories
 include(GNUInstallDirs)
@@ -243,7 +262,7 @@ if (CATKIN_DEVEL_PREFIX)
 		message(FATAL_ERROR "catkin not found")
 	endif()
 else()
-	message(STATUS "catkin DISABLED")
+	#message(STATUS "catkin DISABLED")
 endif()
 
 find_package(PythonInterp REQUIRED)
@@ -252,6 +271,7 @@ find_package(PythonInterp REQUIRED)
 # cmake modules
 #
 enable_testing()
+include(CTest)
 
 #=============================================================================
 # generate compile command database
@@ -337,13 +357,16 @@ add_definitions(${definitions})
 #=============================================================================
 # source code generation
 #
+
 add_subdirectory(msg)
 px4_generate_messages(TARGET msg_gen
 	MSG_FILES ${msg_files}
 	OS ${OS}
 	DEPENDS git_genmsg git_gencpp prebuild_targets
 	)
-px4_generate_parameters_xml(OUT parameters.xml BOARD ${BOARD})
+px4_generate_parameters_xml(OUT parameters.xml 
+                            BOARD ${BOARD}
+                            SCOPE ${PX4_SOURCE_DIR}/cmake/configs/${OS}_${BOARD}_${LABEL}.cmake)
 px4_generate_airframes_xml(OUT airframes.xml BOARD ${BOARD})
 add_custom_target(xml_gen
 	DEPENDS parameters.xml airframes.xml)
@@ -413,7 +436,7 @@ set(module_external_libraries "${module_external_libraries}" CACHE INTERNAL "mod
 
 add_subdirectory(src/firmware/${OS})
 
-#add_dependencies(df_driver_framework nuttx_export_${CONFIG}.stamp)
+#add_dependencies(df_driver_framework nuttx_export_${CONFIG})
 if (NOT "${OS}" STREQUAL "nuttx")
 endif()
 
@@ -437,7 +460,7 @@ endif()
 #=============================================================================
 # generate git version
 #
-px4_create_git_hash_header(HEADER ${PX4_BINARY_DIR}/build_git_version.h)
+px4_create_git_hash_header(OUT ${PX4_BINARY_DIR}/build_git_version.h)
 
 #=============================================================================
 # packaging

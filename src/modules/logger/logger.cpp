@@ -55,8 +55,11 @@
 #include <px4_getopt.h>
 #include <px4_log.h>
 #include <px4_sem.h>
+#include <px4_tasks.h>
 #include <systemlib/mavlink_log.h>
 #include <replay/definitions.hpp>
+#include <version/version.h>
+#include <systemlib/mcu_version.h>
 
 #ifdef __PX4_DARWIN
 #include <sys/param.h>
@@ -578,7 +581,6 @@ int Logger::add_topics_from_file(const char *fname)
 	}
 
 	/* call add_topic for each topic line in the file */
-	// format is TOPIC_NAME, [interval]
 	for (;;) {
 
 		/* get a line, bail on error/EOF */
@@ -593,14 +595,24 @@ int Logger::add_topics_from_file(const char *fname)
 			continue;
 		}
 
-		// default interval to zero
+		// read line with format: <topic_name>[, <interval>]
 		interval = 0;
-		int nfields = sscanf(line, "%s, %u", topic_name, &interval);
+		int nfields = sscanf(line, "%s %u", topic_name, &interval);
 
 		if (nfields > 0) {
+			int name_len = strlen(topic_name);
+
+			if (name_len > 0 && topic_name[name_len - 1] == ',') {
+				topic_name[name_len - 1] = '\0';
+			}
+
 			/* add topic with specified interval */
-			add_topic(topic_name, interval);
-			ntopics++;
+			if (add_topic(topic_name, interval) >= 0) {
+				ntopics++;
+
+			} else {
+				PX4_ERR("Failed to add topic %s", topic_name);
+			}
 		}
 	}
 
@@ -723,6 +735,12 @@ void Logger::run()
 	memset(&timer_call, 0, sizeof(hrt_call));
 	px4_sem_t timer_semaphore;
 	px4_sem_init(&timer_semaphore, 0, 0);
+
+	/* timer_semaphore use case is a signal */
+
+	px4_sem_setprotocol(&timer_semaphore, SEM_PRIO_NONE);
+
+
 	hrt_call_every(&timer_call, _log_interval, _log_interval, timer_callback, &timer_semaphore);
 
 	// check for new subscription data
@@ -1312,7 +1330,20 @@ void Logger::write_info(const char *name, const char *value)
 
 	_writer.unlock();
 }
+
 void Logger::write_info(const char *name, int32_t value)
+{
+	write_info_template<int32_t>(name, value, "int32_t");
+}
+
+void Logger::write_info(const char *name, uint32_t value)
+{
+	write_info_template<uint32_t>(name, value, "uint32_t");
+}
+
+
+template<typename T>
+void Logger::write_info_template(const char *name, T value, const char *type_str)
 {
 	_writer.lock();
 	ulog_message_info_header_s msg;
@@ -1320,12 +1351,12 @@ void Logger::write_info(const char *name, int32_t value)
 	msg.msg_type = static_cast<uint8_t>(ULogMessageType::INFO);
 
 	/* construct format key (type and name) */
-	msg.key_len = snprintf(msg.key, sizeof(msg.key), "int32_t %s", name);
+	msg.key_len = snprintf(msg.key, sizeof(msg.key), "%s %s", type_str, name);
 	size_t msg_size = sizeof(msg) - sizeof(msg.key) + msg.key_len;
 
 	/* copy string value directly to buffer */
-	memcpy(&buffer[msg_size], &value, sizeof(int32_t));
-	msg_size += sizeof(int32_t);
+	memcpy(&buffer[msg_size], &value, sizeof(T));
+	msg_size += sizeof(T);
 
 	msg.msg_size = msg_size - ULOG_MSG_HEADER_LEN;
 
@@ -1354,9 +1385,46 @@ void Logger::write_header()
 /* write version info messages */
 void Logger::write_version()
 {
-	write_info("ver_sw", PX4_GIT_VERSION_STR);
-	write_info("ver_hw", HW_ARCH);
+	write_info("ver_sw", px4_firmware_version_string());
+	write_info("ver_sw_release", px4_firmware_version());
+	write_info("ver_hw", px4_board_name());
 	write_info("sys_name", "PX4");
+	write_info("sys_os_name", px4_os_name());
+	const char *os_version = px4_os_version_string();
+
+	if (os_version) {
+		write_info("sys_os_ver", os_version);
+	}
+
+	write_info("sys_os_ver_release", px4_os_version());
+	write_info("sys_toolchain", px4_toolchain_name());
+	write_info("sys_toolchain_ver", px4_toolchain_version());
+
+	char revision;
+	char *chip_name;
+
+	if (mcu_version(&revision, &chip_name) >= 0) {
+		char mcu_ver[64];
+		snprintf(mcu_ver, sizeof(mcu_ver), "%s, rev. %c", chip_name, revision);
+		write_info("sys_mcu", mcu_ver);
+	}
+
+	/* write the UUID if enabled */
+	param_t write_uuid_param = param_find("SDLOG_UUID");
+
+	if (write_uuid_param != PARAM_INVALID) {
+		uint32_t write_uuid;
+		param_get(write_uuid_param, &write_uuid);
+
+		if (write_uuid == 1) {
+			uint32_t uuid[3];
+			mcu_unique_id(uuid);
+			char uuid_string[sizeof(uint32_t) * 3 * 2 + 1];
+			snprintf(uuid_string, sizeof(uuid_string), "%08x%08x%08x", uuid[0], uuid[1], uuid[2]);
+			write_info("sys_uuid", uuid_string);
+		}
+	}
+
 	int32_t utc_offset = 0;
 
 	if (_log_utc_offset != PARAM_INVALID) {

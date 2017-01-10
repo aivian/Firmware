@@ -116,7 +116,6 @@
 #include <systemlib/systemlib.h>
 #include <systemlib/param/param.h>
 #include <systemlib/perf_counter.h>
-#include <systemlib/git_version.h>
 #include <systemlib/printload.h>
 #include <systemlib/mavlink_log.h>
 #include <version/version.h>
@@ -394,7 +393,7 @@ int sdlog2_main(int argc, char *argv[])
 		return 0;
 	}
 
-	if (!strcmp(argv[1], "on")) {
+	if (!strncmp(argv[1], "on", 2)) {
 		struct vehicle_command_s cmd;
 		cmd.command = VEHICLE_CMD_PREFLIGHT_STORAGE;
 		cmd.param1 = -1;
@@ -873,8 +872,8 @@ int write_version(int fd)
 	};
 
 	/* fill version message and write it */
-	strncpy(log_msg_VER.body.fw_git, px4_git_version, sizeof(log_msg_VER.body.fw_git));
-	strncpy(log_msg_VER.body.arch, HW_ARCH, sizeof(log_msg_VER.body.arch));
+	strncpy(log_msg_VER.body.fw_git, px4_firmware_version_string(), sizeof(log_msg_VER.body.fw_git));
+	strncpy(log_msg_VER.body.arch, px4_board_name(), sizeof(log_msg_VER.body.arch));
 	return write(fd, &log_msg_VER, sizeof(log_msg_VER));
 }
 
@@ -929,16 +928,7 @@ bool copy_if_updated_multi(orb_id_t topic, int multi_instance, int *handle, void
 	bool updated = false;
 
 	if (*handle < 0) {
-#if __PX4_POSIX_EAGLE
-		// The orb_exists call doesn't work correctly on Snapdragon yet.
-		// (No data gets sent from the QURT to the Linux side because there
-		// are no subscribers. However, there won't be any subscribers, if
-		// they check using orb_exists() before subscribing.)
-		if (true)
-#else
 		if (OK == orb_exists(topic, multi_instance))
-#endif
-
 		{
 			*handle = orb_subscribe_multi(topic, multi_instance);
 			/* copy first data */
@@ -2209,7 +2199,7 @@ int sdlog2_thread_main(int argc, char *argv[])
 				log_msg.body.log_INO2.s[8] = buf.innovations.airspeed_innov;
 				log_msg.body.log_INO2.s[9] = buf.innovations.airspeed_innov_var;
 				log_msg.body.log_INO2.s[10] = buf.innovations.beta_innov;
- 				log_msg.body.log_INO2.s[11] = buf.innovations.beta_innov_var;
+				log_msg.body.log_INO2.s[11] = buf.innovations.beta_innov_var;
 				LOGBUFFER_WRITE_AND_COUNT(EST5);
 
 				log_msg.msg_type = LOG_EST6_MSG;

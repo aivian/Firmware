@@ -77,7 +77,7 @@
 #include <uORB/topics/vehicle_local_position_setpoint.h>
 #include <uORB/topics/vehicle_land_detected.h>
 
-#include <systemlib/systemlib.h>
+#include <float.h>
 #include <systemlib/mavlink_log.h>
 #include <mathlib/mathlib.h>
 #include <lib/geo/geo.h>
@@ -1314,6 +1314,7 @@ MulticopterPositionControl::limit_acceleration(float dt)
 	// limit vertical acceleration
 	float acc_v = (_vel_sp(2) - _vel_sp_prev(2)) / dt;
 
+	// TODO: vertical acceleration is not just 2 * horizontal acceleration
 	if (fabsf(acc_v) > 2 * _params.acc_hor_max) {
 		acc_v /= fabsf(acc_v);
 		_vel_sp(2) = acc_v * 2 * _params.acc_hor_max * dt + _vel_sp_prev(2);
@@ -1725,14 +1726,7 @@ MulticopterPositionControl::control_position(float dt)
 				float i = _params.thr_min;
 
 				if (_reset_int_z_manual) {
-					i = _params.thr_hover;
-
-					if (i < _params.thr_min) {
-						i = _params.thr_min;
-
-					} else if (i > _params.thr_max) {
-						i = _params.thr_max;
-					}
+					i = math::constrain(_params.thr_hover, _params.thr_min, _params.thr_max);
 				}
 
 				_thrust_int(2) = -i;
@@ -1770,9 +1764,7 @@ MulticopterPositionControl::control_position(float dt)
 						    2) * _att_sp.thrust - _thrust_int(1) - _vel_err_d(1) * _params.vel_d(1)) / _params.vel_p(1);
 			_vel_sp(2) = _vel(2) + (-Rb(2,
 						    2) * _att_sp.thrust - _thrust_int(2) - _vel_err_d(2) * _params.vel_d(2)) / _params.vel_p(2);
-			_vel_sp_prev(0) = _vel_sp(0);
-			_vel_sp_prev(1) = _vel_sp(1);
-			_vel_sp_prev(2) = _vel_sp(2);
+			_vel_sp_prev = _vel_sp;
 			control_vel_enabled_prev = true;
 
 			// compute updated velocity error
@@ -1888,7 +1880,8 @@ MulticopterPositionControl::control_position(float dt)
 		/* limit min lift */
 		if (-thrust_sp(2) < thr_min) {
 			thrust_sp(2) = -thr_min;
-			saturation_z = true;
+			/* Don't freeze altitude integral if it wants to throttle up */
+			saturation_z = vel_err(2) > 0.0f ? true : saturation_z;
 		}
 
 		if (_control_mode.flag_control_velocity_enabled || _control_mode.flag_control_acceleration_enabled) {
@@ -1906,7 +1899,8 @@ MulticopterPositionControl::control_position(float dt)
 						float k = thrust_xy_max / thrust_sp_xy_len;
 						thrust_sp(0) *= k;
 						thrust_sp(1) *= k;
-						saturation_xy = true;
+						/* Don't freeze x,y integrals if they both want to throttle down */
+						saturation_xy = ((vel_err(0) * _vel_sp(0) < 0.0f) && (vel_err(1) * _vel_sp(1) < 0.0f)) ? saturation_xy : true;
 					}
 				}
 			}
@@ -1942,7 +1936,8 @@ MulticopterPositionControl::control_position(float dt)
 					thrust_sp(1) = 0.0f;
 					thrust_sp(2) = -thr_max;
 					saturation_xy = true;
-					saturation_z = true;
+					/* Don't freeze altitude integral if it wants to throttle down */
+					saturation_z = vel_err(2) < 0.0f ? true : saturation_z;
 
 				} else {
 					/* preserve thrust Z component and lower XY, keeping altitude is more important than position */
@@ -1951,7 +1946,8 @@ MulticopterPositionControl::control_position(float dt)
 					float k = thrust_xy_max / thrust_xy_abs;
 					thrust_sp(0) *= k;
 					thrust_sp(1) *= k;
-					saturation_xy = true;
+					/* Don't freeze x,y integrals if they both want to throttle down */
+					saturation_xy = ((vel_err(0) * _vel_sp(0) < 0.0f) && (vel_err(1) * _vel_sp(1) < 0.0f)) ? saturation_xy : true;
 				}
 
 			} else {
@@ -2162,7 +2158,6 @@ MulticopterPositionControl::generate_attitude_setpoint(float dt)
 		_att_sp.landing_gear = -1.0f;
 	}
 
-
 	_att_sp.timestamp = hrt_absolute_time();
 }
 
@@ -2185,7 +2180,6 @@ MulticopterPositionControl::task_main()
 	_pos_sp_triplet_sub = orb_subscribe(ORB_ID(position_setpoint_triplet));
 	_local_pos_sp_sub = orb_subscribe(ORB_ID(vehicle_local_position_setpoint));
 	_global_vel_sp_sub = orb_subscribe(ORB_ID(vehicle_global_velocity_setpoint));
-
 
 	parameters_update(true);
 
@@ -2232,7 +2226,7 @@ MulticopterPositionControl::task_main()
 		parameters_update(false);
 
 		hrt_abstime t = hrt_absolute_time();
-		float dt = t_prev != 0 ? (t - t_prev) * 0.000001f : 0.0f;
+		float dt = t_prev != 0 ? (t - t_prev) / 1e6f : 0.0f;
 		t_prev = t;
 
 		// set dt for control blocks
@@ -2250,11 +2244,9 @@ MulticopterPositionControl::task_main()
 		}
 
 		/* reset yaw and altitude setpoint for VTOL which are in fw mode */
-		if (_vehicle_status.is_vtol) {
-			if (!_vehicle_status.is_rotary_wing) {
-				_reset_yaw_sp = true;
-				_reset_alt_sp = true;
-			}
+		if (_vehicle_status.is_vtol && !_vehicle_status.is_rotary_wing) {
+			_reset_yaw_sp = true;
+			_reset_alt_sp = true;
 		}
 
 		//Update previous arming state
@@ -2303,8 +2295,8 @@ MulticopterPositionControl::task_main()
 
 		} else {
 			/* position controller disabled, reset setpoints */
-			_reset_alt_sp = true;
 			_reset_pos_sp = true;
+			_reset_alt_sp = true;
 			_do_reset_alt_pos_flag = true;
 			_mode_auto = false;
 			_reset_int_z = true;

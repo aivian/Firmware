@@ -1291,12 +1291,6 @@ int HMC5883::check_calibration()
 	bool scale_valid  = (check_scale() == OK);
 
 	if (_calibrated != (offset_valid && scale_valid)) {
-		// too verbose for normal operation
-		if (!offset_valid || !scale_valid) {
-			warnx("mag cal status changed %s%s", (scale_valid) ? "" : "scale invalid ",
-			      (offset_valid) ? "" : "offset invalid");
-		}
-
 		_calibrated = (offset_valid && scale_valid);
 	}
 
@@ -1459,6 +1453,12 @@ struct hmc5883_bus_option {
 	HMC5883	*dev;
 } bus_options[] = {
 	{ HMC5883_BUS_I2C_EXTERNAL, "/dev/hmc5883_ext", &HMC5883_I2C_interface, PX4_I2C_BUS_EXPANSION, NULL },
+#ifdef PX4_I2C_BUS_EXPANSION1
+	{ HMC5883_BUS_I2C_EXTERNAL, "/dev/hmc5883_ext1", &HMC5883_I2C_interface, PX4_I2C_BUS_EXPANSION1, NULL },
+#endif
+#ifdef PX4_I2C_BUS_EXPANSION2
+	{ HMC5883_BUS_I2C_EXTERNAL, "/dev/hmc5883_ext2", &HMC5883_I2C_interface, PX4_I2C_BUS_EXPANSION2, NULL },
+#endif
 #ifdef PX4_I2C_BUS_ONBOARD
 	{ HMC5883_BUS_I2C_INTERNAL, "/dev/hmc5883_int", &HMC5883_I2C_interface, PX4_I2C_BUS_ONBOARD, NULL },
 #endif
@@ -1493,7 +1493,7 @@ start_bus(struct hmc5883_bus_option &bus, enum Rotation rotation)
 
 	if (interface->init() != OK) {
 		delete interface;
-		warnx("no device on bus %u", (unsigned)bus.busid);
+		warnx("no device on bus %u (type: %u)", (unsigned)bus.busnum, (unsigned)bus.busid);
 		return false;
 	}
 

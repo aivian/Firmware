@@ -39,26 +39,6 @@ ifeq ($(wildcard .git),)
     $(error YOU HAVE TO USE GIT TO DOWNLOAD THIS REPOSITORY. ABORTING.)
 endif
 
-CMAKE_VER := $(shell Tools/check_cmake.sh; echo $$?)
-ifneq ($(CMAKE_VER),0)
-    $(warning Not a valid CMake version or CMake not installed.)
-    $(warning On Ubuntu 16.04, install or upgrade via:)
-    $(warning )
-    $(warning 3rd party PPA:)
-    $(warning sudo add-apt-repository ppa:george-edison55/cmake-3.x -y)
-    $(warning sudo apt-get update)
-    $(warning sudo apt-get install cmake)
-    $(warning )
-    $(warning Official website:)
-    $(warning wget https://cmake.org/files/v3.4/cmake-3.4.3-Linux-x86_64.sh)
-    $(warning chmod +x cmake-3.4.3-Linux-x86_64.sh)
-    $(warning sudo mkdir /opt/cmake-3.4.3)
-    $(warning sudo ./cmake-3.4.3-Linux-x86_64.sh --prefix=/opt/cmake-3.4.3 --exclude-subdir)
-    $(warning export PATH=/opt/cmake-3.4.3/bin:$$PATH)
-    $(warning )
-    $(error Fatal)
-endif
-
 # Help
 # --------------------------------------------------------------------
 # Don't be afraid of this makefile, it is just passing
@@ -88,24 +68,32 @@ FIRST_ARG := $(firstword $(MAKECMDGOALS))
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 j ?= 4
 
+NINJA_BIN := ninja
 ifndef NO_NINJA_BUILD
-NINJA_BUILD := $(shell ninja --version 2>/dev/null)
-endif
-ifdef NINJA_BUILD
-    PX4_CMAKE_GENERATOR ?= "Ninja"
-    PX4_MAKE = ninja
-    PX4_MAKE_ARGS =
-else
+	NINJA_BUILD := $(shell $(NINJA_BIN) --version 2>/dev/null)
 
-ifdef SYSTEMROOT
-	# Windows
-	PX4_CMAKE_GENERATOR ?= "MSYS Makefiles"
+	ifndef NINJA_BUILD
+		NINJA_BIN := ninja-build
+		NINJA_BUILD := $(shell $(NINJA_BIN) --version 2>/dev/null)
+	endif
+endif
+
+ifdef NINJA_BUILD
+	PX4_CMAKE_GENERATOR := Ninja
+	PX4_MAKE := $(NINJA_BIN)
+	PX4_MAKE_ARGS :=
 else
-	PX4_CMAKE_GENERATOR ?= "Unix Makefiles"
+	ifdef SYSTEMROOT
+		# Windows
+		PX4_CMAKE_GENERATOR := "MSYS\ Makefiles"
+	else
+		PX4_CMAKE_GENERATOR := "Unix\ Makefiles"
+	endif
+	PX4_MAKE = $(MAKE)
+	PX4_MAKE_ARGS = -j$(j) --no-print-directory
 endif
-    PX4_MAKE = $(MAKE)
-    PX4_MAKE_ARGS = -j$(j) --no-print-directory
-endif
+
+SRC_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 
 # check if replay env variable is set & set build dir accordingly
 ifdef replay
@@ -120,7 +108,6 @@ ifdef EXTERNAL_MODULES_LOCATION
 	CMAKE_ARGS := -DEXTERNAL_MODULES_LOCATION:STRING=$(EXTERNAL_MODULES_LOCATION)
 endif
 
-SRC_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 
 # Functions
 # --------------------------------------------------------------------
@@ -128,22 +115,15 @@ SRC_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 define cmake-build
 +@$(eval BUILD_DIR = $(SRC_DIR)/build_$@$(BUILD_DIR_SUFFIX))
 +@if [ $(PX4_CMAKE_GENERATOR) = "Ninja" ] && [ -e $(BUILD_DIR)/Makefile ]; then rm -rf $(BUILD_DIR); fi
-+@if [ ! -e $(BUILD_DIR)/CMakeCache.txt ]; then mkdir -p $(BUILD_DIR) && cd $(BUILD_DIR) && cmake .. -G$(PX4_CMAKE_GENERATOR) -DCONFIG=$(1) $(CMAKE_ARGS) || (cd .. && rm -rf $(BUILD_DIR)); fi
++@if [ ! -e $(BUILD_DIR)/CMakeCache.txt ]; then mkdir -p $(BUILD_DIR) && cd $(BUILD_DIR) && cmake $(2) -G"$(PX4_CMAKE_GENERATOR)" -DCONFIG=$(1) $(CMAKE_ARGS) || (rm -rf $(BUILD_DIR)); fi
 +@echo "PX4 CONFIG: $(BUILD_DIR)"
 +@$(PX4_MAKE) -C "$(BUILD_DIR)" $(PX4_MAKE_ARGS) $(ARGS)
 endef
 
-define cmake-build-other
-+@$(eval BUILD_DIR = $(SRC_DIR)/build_$@$(BUILD_DIR_SUFFIX))
-+@if [ $(PX4_CMAKE_GENERATOR) = "Ninja" ] && [ -e $(BUILD_DIR)/Makefile ]; then rm -rf $(BUILD_DIR); fi
-+@if [ ! -e $(BUILD_DIR)/CMakeCache.txt ]; then mkdir -p $(BUILD_DIR) && cd $(BUILD_DIR) && cmake $(2) -G$(PX4_CMAKE_GENERATOR) -DCONFIG=$(1) || (cd .. && rm -rf $(BUILD_DIR)); fi
-+@$(PX4_MAKE) -C "$(BUILD_DIR)" $(PX4_MAKE_ARGS) $(ARGS)
-endef
-
 define colorecho
-      @tput setaf 6
-      @echo $1
-      @tput sgr0
++@tput setaf 6
++@echo $1
++@tput sgr0
 endef
 
 # Get a list of all config targets.
@@ -157,13 +137,13 @@ NUTTX_CONFIG_TARGETS := $(patsubst nuttx_%,%,$(filter nuttx_%,$(ALL_CONFIG_TARGE
 
 # All targets.
 $(ALL_CONFIG_TARGETS):
-	$(call cmake-build,$@)
+	$(call cmake-build,$@,$(SRC_DIR))
 
 # Abbreviated config targets.
 
 # nuttx_ is left off by default; provide a rule to allow that.
 $(NUTTX_CONFIG_TARGETS):
-	$(call cmake-build,nuttx_$@)
+	$(call cmake-build,nuttx_$@,$(SRC_DIR))
 
 all_nuttx_targets: $(NUTTX_CONFIG_TARGETS)
 
@@ -195,11 +175,11 @@ run_sitl_ros: _sitl_deprecation
 # Other targets
 # --------------------------------------------------------------------
 
-.PHONY: uavcan_firmware check check_format format unittest tests qgc_firmware package_firmware clean submodulesclean distclean
+.PHONY: uavcan_firmware compiler_version check check_format format unittest tests qgc_firmware alt_firmware package_firmware clean submodulesclean distclean
 .NOTPARALLEL:
 
 # All targets with just dependencies but no recipe must either be marked as phony (or have the special @: as recipe).
-.PHONY: checks_defaults checks_bootloaders checks_tests checks_alts checks_uavcan checks_sitls checks_last quick_check tests extra_firmware
+.PHONY: checks_defaults checks_bootloaders checks_tests checks_uavcan checks_sitls checks_last quick_check tests extra_firmware
 
 uavcan_firmware:
 ifeq ($(VECTORCONTROL),1)
@@ -208,30 +188,64 @@ ifeq ($(VECTORCONTROL),1)
 endif
 
 check_px4fmu-v4_default: uavcan_firmware
+
 check_px4fmu-v4_default_and_uavcan: check_px4fmu-v4_default
-	@echo
+	@echo VECTORCONTROL=$VECTORCONTROL
 ifeq ($(VECTORCONTROL),1)
 	@echo "Cleaning up vectorcontrol firmware"
 	@rm -rf vectorcontrol
 	@rm -rf ROMFS/px4fmu_common/uavcan
 endif
 
-# All default targets that don't require a special build environment (currently built on semaphore-ci)
-check: 	check_px4fmu-v1_default \
-	check_px4fmu-v2_default \
-	check_px4fmu-v2_test \
-	check_px4fmu-v4_default_and_uavcan \
-	check_mindpx-v2_default \
-	check_posix_sitl_default \
-	check_tap-v1_default \
+sizes:
+	@-find build_* -name firmware_nuttx -type f | xargs size 2> /dev/null || :
+
+# QGroundControl flashable firmware (currently built by travis-ci)
+qgc_firmware: \
 	check_aerofc-v1_default \
-	check_px4-stm32f4discovery_default \
 	check_crazyflie_default \
-	check_tests \
-	check_format
+	check_mindpx-v2_default \
+	check_px4fmu-v1_default \
+	check_px4fmu-v2_default \
+	check_px4fmu-v3_default \
+	check_px4fmu-v4_default \
+	check_tap-v1_default \
+
+alt_firmware: \
+	check_auav-x21_default \
+	check_px4-stm32f4discovery_default \
+	check_px4cannode-v1_default \
+	check_px4esc-v1_default \
+	check_px4fmu-v4pro_default \
+	check_px4fmu-v5_default \
+	check_px4nucleoF767ZI-v1_default \
+	check_s2740vc-v1_default \
+
+checks_defaults: qgc_firmware alt_firmware
+
+checks_bootloaders: \
+	check_esc35-v1_bootloader \
+	check_px4cannode-v1_bootloader \
+	check_px4esc-v1_bootloader \
+	check_px4flow-v2_bootloader \
+	check_s2740vc-v1_bootloader \
+	check_zubaxgnss-v1_bootloader \
+
+checks_uavcan: \
+	check_px4fmu-v4_default_and_uavcan
+
+checks_last: \
+	tests \
+	check_format \
+
+compiler_version:
+	-arm-none-eabi-gcc --version
+
+# All default targets that don't require a special build environment (currently built on semaphore-ci)
+check: compiler_version checks_defaults checks_bootloaders checks_tests checks_uavcan checks_last sizes
 
 # quick_check builds a single nuttx and posix target, runs testing, and checks the style
-quick_check: check_posix_sitl_default check_px4fmu-v4_default check_tests check_format
+quick_check: compiler_version check_posix_sitl_default check_px4fmu-v3_default tests check_format sizes
 
 check_format:
 	$(call colorecho,"Checking formatting with astyle")
@@ -246,37 +260,48 @@ check_%:
 	@echo
 	$(call colorecho,"Building" $(subst check_,,$@))
 	@$(MAKE) --no-print-directory $(subst check_,,$@)
+	@mkdir -p Binaries
+	@mkdir -p Meta/$(subst check_,,$@)
+	@cp build_$(subst check_,,$@)/*.xml Meta/$(subst check_,,$@) 2> /dev/null || :
+	@find build_$(subst check_,,$@)/src/firmware -type f -name 'nuttx-*-default.px4' -exec cp "{}" Binaries \; 2> /dev/null || :
+	@rm -rf build_$(subst check_,,$@)
 	@echo
 
 unittest: posix_sitl_default
-	$(call cmake-build-other,unittest, ../unittests)
+	$(call cmake-build,unittest,$(SRC_DIR)/unittests)
 	@(cd build_unittest && ctest -j2 --output-on-failure)
 
-run_tests_posix: posix_sitl_default
-	@(cd build_posix_sitl_default/ && ctest -V)
+run_tests_posix:
+	$(MAKE) --no-print-directory posix_sitl_default test_results
 
-tests: check_unittest run_tests_posix
+tests: unittest run_tests_posix
 
 tests_coverage:
-	@(PX4_CODE_COVERAGE=1 CCACHE_DISABLE=1 ${MAKE} tests)
-	@(lcov --directory . --capture --quiet --output-file coverage.info)
-	@(lcov --remove coverage.info '/usr/*' --quiet --output-file coverage.info)
-	#@(lcov --list coverage.info)
-	@(genhtml coverage.info --quiet --output-directory coverage-html)
+	@lcov --zerocounters --directory $(SRC_DIR) --quiet
+	@lcov --capture --initial --directory $(SRC_DIR) --quiet --output-file coverage.info
+	@$(MAKE) --no-print-directory unittest PX4_CODE_COVERAGE=1 CCACHE_DISABLE=1
+	@$(MAKE) --no-print-directory posix_sitl_default test_results PX4_CODE_COVERAGE=1 CCACHE_DISABLE=1
+	@lcov --no-checksum --directory $(SRC_DIR) --capture --quiet --output-file coverage.info
+	@lcov --remove coverage.info '/usr/*' 'unittests/googletest/*' --quiet --output-file coverage.info
+	@genhtml --legend --show-details --function-coverage --quiet --output-directory coverage-html coverage.info
+	@$(MAKE) --no-print-directory posix_sitl_default test_results_junit
 
-# QGroundControl flashable firmware (currently built by travis-ci)
-qgc_firmware: \
-	check_px4fmu-v1_default \
-	check_px4fmu-v2_default \
-	check_px4fmu-v3_default \
-	check_px4fmu-v4_default_and_uavcan \
-	check_crazyflie_default \
-	check_mindpx-v2_default \
-	check_tap-v1_default \
-	check_format
+scan-build:
+	@export CCACHE_DISABLE=1
+	@mkdir -p $(SRC_DIR)/build_posix_sitl_default_scan-build
+	@cd $(SRC_DIR)/build_posix_sitl_default_scan-build && scan-build cmake .. -GNinja -DCONFIG=posix_sitl_default
+	@scan-build cmake --build $(SRC_DIR)/build_posix_sitl_default_scan-build
+
+clang-check:
+	@CC=clang CXX=clang++ $(MAKE) --no-print-directory posix_sitl_default
+	@$(SRC_DIR)/Tools/clang-tool.sh -b build_posix_sitl_default -t clang-check
+
+clang-tidy:
+	@CC=clang CXX=clang++ $(MAKE) --no-print-directory posix_sitl_default
+	@$(SRC_DIR)/Tools/clang-tool.sh -b build_posix_sitl_default -t clang-tidy
 
 package_firmware:
-	@zip --junk-paths Firmware.zip `find . -name \*.px4`
+	@zip --junk-paths Firmware.zip `find Binaries/. -name \*.px4`
 
 clean:
 	@rm -rf build_*/
@@ -287,7 +312,7 @@ submodulesclean:
 	@git submodule deinit -f .
 	@git submodule update --init --recursive --force
 
-distclean: submodulesclean clean
+distclean: submodulesclean
 	@git clean -ff -x -d -e ".project" -e ".cproject" -e ".idea"
 
 # All other targets are handled by PX4_MAKE. Add a rule here to avoid printing an error.
@@ -322,4 +347,3 @@ help:
 # Print a list of all config targets.
 list_config_targets:
 	@for targ in $(patsubst nuttx_%,[nuttx_]%,$(ALL_CONFIG_TARGETS)); do echo $$targ; done
-

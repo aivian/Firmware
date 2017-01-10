@@ -56,7 +56,7 @@
 #define debug(fmt, args...)	do { } while(0)
 //#define debug(fmt, args...)	do { printf("[mixer] " fmt "\n", ##args); } while(0)
 //#include <debug.h>
-//#define debug(fmt, args...)	lowsyslog(fmt "\n", ##args)
+//#define debug(fmt, args...)	syslog(fmt "\n", ##args)
 
 MixerGroup::MixerGroup(ControlCallback control_cb, uintptr_t cb_handle) :
 	Mixer(control_cb, cb_handle),
@@ -88,11 +88,15 @@ void
 MixerGroup::reset()
 {
 	Mixer *mixer;
+	Mixer *next = _first;
+
+	/* flag mixer as invalid */
+	_first = nullptr;
 
 	/* discard sub-mixers */
-	while (_first != nullptr) {
-		mixer = _first;
-		_first = mixer->_next;
+	while (next != nullptr) {
+		mixer = next;
+		next = mixer->_next;
 		delete mixer;
 		mixer = nullptr;
 	}

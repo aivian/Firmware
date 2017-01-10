@@ -1,5 +1,7 @@
 include(nuttx/px4_impl_nuttx)
 
+px4_nuttx_configure(HWCLASS m4 CONFIG nsh ROMFS y ROMFSROOT px4fmu_common)
+
 set(CMAKE_TOOLCHAIN_FILE ${PX4_SOURCE_DIR}/cmake/toolchains/Toolchain-arm-none-eabi.cmake)
 
 set(config_uavcan_num_ifaces 2)
@@ -46,9 +48,10 @@ set(config_module_list
 	drivers/pwm_input
 	drivers/camera_trigger
 	drivers/bst
-	#drivers/snapdragon_rc_pwm
+##TO FIT drivers/snapdragon_rc_pwm
 	drivers/lis3mdl
 	drivers/iridiumsbd
+	drivers/ulanding
 
 	#
 	# System commands
@@ -57,6 +60,7 @@ set(config_module_list
 	systemcmds/config
 	#systemcmds/dumpfile
 	#systemcmds/esc_calib
+	systemcmds/hardfault_log
 	systemcmds/mixer
 	#systemcmds/motor_ramp
 	systemcmds/mtd
@@ -141,6 +145,7 @@ set(config_module_list
 	lib/terrain_estimation
 	lib/runway_takeoff
 	lib/tailsitter_recovery
+	lib/version
 	lib/DriverFramework/framework
 	platforms/nuttx
 
@@ -202,11 +207,13 @@ set(config_io_extra_libs
 add_custom_target(sercon)
 set_target_properties(sercon PROPERTIES
 	PRIORITY "SCHED_PRIORITY_DEFAULT"
-	MAIN "sercon" STACK_MAIN "2048"
+	MAIN "sercon"
+	STACK_MAIN "2048"
 	COMPILE_FLAGS "-Os")
 
 add_custom_target(serdis)
 set_target_properties(serdis PROPERTIES
 	PRIORITY "SCHED_PRIORITY_DEFAULT"
-	MAIN "serdis" STACK_MAIN "2048"
+	MAIN "serdis"
+	STACK_MAIN "2048"
 	COMPILE_FLAGS "-Os")
