@@ -42,6 +42,7 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <float.h>
 #include <stdlib.h>
 #include <semaphore.h>
 #include <string.h>
@@ -316,6 +317,7 @@ PX4FMU::PX4FMU() :
 	_pwm_alt_rate_channels(0),
 	_current_update_rate(0),
 	_work{},
+	_vehicle_cmd_sub(-1),
 	_armed_sub(-1),
 	_param_sub(-1),
 	_adc_sub(-1),
@@ -730,13 +732,13 @@ PX4FMU::subscribe()
 
 	for (unsigned i = 0; i < actuator_controls_s::NUM_ACTUATOR_CONTROL_GROUPS; i++) {
 		if (sub_groups & (1 << i)) {
-			PX4_DEBUG("subscribe to actuator_controls_%d", i);
+			DEVICE_DEBUG("subscribe to actuator_controls_%d", i);
 			_control_subs[i] = orb_subscribe(_control_topics[i]);
 		}
 
 		if (unsub_groups & (1 << i)) {
-			PX4_DEBUG("unsubscribe from actuator_controls_%d", i);
-			::close(_control_subs[i]);
+			DEVICE_DEBUG("unsubscribe from actuator_controls_%d", i);
+			orb_unsubscribe(_control_subs[i]);
 			_control_subs[i] = -1;
 		}
 
@@ -1199,8 +1201,15 @@ PX4FMU::cycle()
 				       _disarmed_pwm, _min_pwm, _max_pwm, outputs, pwm_limited, &_pwm_limit);
 
 
+			/* overwrite outputs in case of force_failsafe with _failsafe_pwm PWM values */
+			if (_armed.force_failsafe) {
+				for (size_t i = 0; i < num_outputs; i++) {
+					pwm_limited[i] = _failsafe_pwm[i];
+				}
+			}
+
 			/* overwrite outputs in case of lockdown with disarmed PWM values */
-			if (_armed.lockdown) {
+			if (_armed.lockdown || _armed.manual_lockdown) {
 				for (size_t i = 0; i < num_outputs; i++) {
 					pwm_limited[i] = _disarmed_pwm[i];
 				}
@@ -1616,13 +1625,13 @@ void PX4FMU::work_stop()
 
 	for (unsigned i = 0; i < actuator_controls_s::NUM_ACTUATOR_CONTROL_GROUPS; i++) {
 		if (_control_subs[i] > 0) {
-			::close(_control_subs[i]);
+			orb_unsubscribe(_control_subs[i]);
 			_control_subs[i] = -1;
 		}
 	}
 
-	::close(_armed_sub);
-	::close(_param_sub);
+	orb_unsubscribe(_armed_sub);
+	orb_unsubscribe(_param_sub);
 
 	/* make sure servos are off */
 	up_pwm_servo_deinit();
@@ -2475,19 +2484,31 @@ PX4FMU::gpio_set_function(uint32_t gpios, int function)
 		if (gpios & (1 << i)) {
 			switch (function) {
 			case GPIO_SET_INPUT:
-				px4_arch_configgpio(_gpio_tab[i].input);
+				if (_gpio_tab[i].input) {
+					px4_arch_configgpio(_gpio_tab[i].input);
+				}
+
 				break;
 
 			case GPIO_SET_OUTPUT:
-				px4_arch_configgpio(_gpio_tab[i].output);
+				if (_gpio_tab[i].output) {
+					px4_arch_configgpio(_gpio_tab[i].output);
+				}
+
 				break;
 
 			case GPIO_SET_OUTPUT_LOW:
-				px4_arch_configgpio((_gpio_tab[i].output & ~(GPIO_OUTPUT_SET)) | GPIO_OUTPUT_CLEAR);
+				if (_gpio_tab[i].output) {
+					px4_arch_configgpio((_gpio_tab[i].output & ~(GPIO_OUTPUT_SET)) | GPIO_OUTPUT_CLEAR);
+				}
+
 				break;
 
 			case GPIO_SET_OUTPUT_HIGH:
-				px4_arch_configgpio((_gpio_tab[i].output & ~(GPIO_OUTPUT_CLEAR)) | GPIO_OUTPUT_SET);
+				if (_gpio_tab[i].output) {
+					px4_arch_configgpio((_gpio_tab[i].output & ~(GPIO_OUTPUT_CLEAR)) | GPIO_OUTPUT_SET);
+				}
+
 				break;
 
 			case GPIO_SET_ALT_1:
@@ -2517,7 +2538,9 @@ PX4FMU::gpio_write(uint32_t gpios, int function)
 
 	for (unsigned i = 0; i < _ngpio; i++)
 		if (gpios & (1 << i)) {
-			px4_arch_gpiowrite(_gpio_tab[i].output, value);
+			if (_gpio_tab[i].output) {
+				px4_arch_gpiowrite(_gpio_tab[i].output, value);
+			}
 		}
 }
 
@@ -2527,7 +2550,7 @@ PX4FMU::gpio_read(void)
 	uint32_t bits = 0;
 
 	for (unsigned i = 0; i < _ngpio; i++)
-		if (px4_arch_gpioread(_gpio_tab[i].input)) {
+		if (_gpio_tab[i].input != 0 && px4_arch_gpioread(_gpio_tab[i].input)) {
 			bits |= (1 << i);
 		}
 

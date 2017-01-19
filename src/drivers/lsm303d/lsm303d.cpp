@@ -1642,6 +1642,9 @@ LSM303D::measure()
 	accel_report.scaling = _accel_range_scale;
 	accel_report.range_m_s2 = _accel_range_m_s2;
 
+	/* return device ID */
+	accel_report.device_id = _device_id.devid;
+
 	_accel_reports->force(&accel_report);
 
 	/* notify anyone waiting for data */
@@ -1726,6 +1729,7 @@ LSM303D::mag_measure()
 	 */
 	_last_temperature = 25 + (raw_mag_report.temperature * 0.125f);
 	mag_report.temperature = _last_temperature;
+	mag_report.device_id = _mag->_device_id.devid;
 
 	_mag_reports->force(&mag_report);
 

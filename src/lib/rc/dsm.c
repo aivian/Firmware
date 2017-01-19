@@ -51,7 +51,7 @@
 #include "dsm.h"
 #include <drivers/drv_hrt.h>
 
-#if defined (__PX4_LINUX) || defined (__PX4_DARWIN)
+#if defined (__PX4_LINUX) || defined (__PX4_DARWIN) || defined(__PX4_QURT)
 #define dsm_udelay(arg) usleep(arg)
 #else
 #include <nuttx/arch.h>
@@ -303,6 +303,16 @@ dsm_init(const char *device)
 	} else {
 		return -1;
 	}
+}
+
+void
+dsm_deinit()
+{
+	if (dsm_fd >= 0) {
+		close(dsm_fd);
+	}
+
+	dsm_fd = -1;
 }
 
 #ifdef GPIO_SPEKTRUM_PWR_EN
@@ -686,7 +696,7 @@ dsm_parse(uint64_t now, uint8_t *frame, unsigned len, uint16_t *values,
 #ifdef DSM_DEBUG
 
 		for (unsigned i = 0; i < dsm_chan_count; i++) {
-			printf("dsm_decode: %u: %u\n", i, values[0]);
+			printf("dsm_decode: %u: %u\n", i, values[i]);
 		}
 
 #endif

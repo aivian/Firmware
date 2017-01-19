@@ -40,6 +40,7 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <float.h>
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
@@ -61,7 +62,7 @@
 #define debug(fmt, args...)	do { } while(0)
 //#define debug(fmt, args...)	do { printf("[mixer] " fmt "\n", ##args); } while(0)
 //#include <debug.h>
-//#define debug(fmt, args...)	lowsyslog(fmt "\n", ##args)
+//#define debug(fmt, args...)	syslog(fmt "\n", ##args)
 
 /*
  * Clockwise: 1
@@ -115,22 +116,9 @@ MultirotorMixer::from_text(Mixer::ControlCallback control_cb, uintptr_t cb_handl
 	int s[4];
 	int used;
 
-	/* enforce that the mixer ends with space or a new line */
-	for (int i = buflen - 1; i >= 0; i--) {
-		if (buf[i] == '\0') {
-			continue;
-		}
-
-		/* require a space or newline at the end of the buffer, fail on printable chars */
-		if (buf[i] == ' ' || buf[i] == '\n' || buf[i] == '\r') {
-			/* found a line ending or space, so no split symbols / numbers. good. */
-			break;
-
-		} else {
-			debug("simple parser rejected: No newline / space at end of buf. (#%d/%d: 0x%02x)", i, buflen - 1, buf[i]);
-			return nullptr;
-		}
-
+	/* enforce that the mixer ends with a new line */
+	if (!string_well_formed(buf, buflen)) {
+		return nullptr;
 	}
 
 	if (sscanf(buf, "R: %7s %d %d %d %d%n", geomname, &s[0], &s[1], &s[2], &s[3], &used) != 5) {
@@ -166,6 +154,9 @@ MultirotorMixer::from_text(Mixer::ControlCallback control_cb, uintptr_t cb_handl
 
 	} else if (!strcmp(geomname, "4w")) {
 		geometry = MultirotorGeometry::QUAD_WIDE;
+
+	} else if (!strcmp(geomname, "4s")) {
+		geometry = MultirotorGeometry::QUAD_S250AQ;
 
 	} else if (!strcmp(geomname, "4dc")) {
 		geometry = MultirotorGeometry::QUAD_DEADCAT;

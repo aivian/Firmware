@@ -273,7 +273,7 @@ bool px4_exit_requested(void)
 
 static void set_cpu_scaling()
 {
-#ifdef __PX4_POSIX_EAGLE
+#if defined(__PX4_POSIX_EAGLE) || defined(__PX4_POSIX_EXCELSIOR)
 	// On Snapdragon we miss updates in sdlog2 unless all 4 CPUs are run
 	// at the maximum frequency all the time.
 	// Interestingely, cpu0 and cpu3 set the scaling for all 4 CPUs on Snapdragon.
@@ -286,7 +286,13 @@ static void set_cpu_scaling()
 #endif
 }
 
+#ifdef __PX4_SITL_MAIN_OVERRIDE
+int SITL_MAIN(int argc, char **argv);
+
+int SITL_MAIN(int argc, char **argv)
+#else
 int main(int argc, char **argv)
+#endif
 {
 	bool daemon_mode = false;
 	bool chroot_on = false;

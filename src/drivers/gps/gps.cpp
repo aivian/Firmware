@@ -324,7 +324,7 @@ int GPS::init()
 
 	/* start the GPS driver worker task */
 	_task = px4_task_spawn_cmd("gps", SCHED_DEFAULT,
-				   SCHED_PRIORITY_SLOW_DRIVER, 1200, (px4_main_t)&GPS::task_main_trampoline, args);
+				   SCHED_PRIORITY_SLOW_DRIVER, 1400, (px4_main_t)&GPS::task_main_trampoline, args);
 
 	if (_task < 0) {
 		PX4_WARN("task start failed: %d", errno);
@@ -492,6 +492,8 @@ int GPS::setBaudrate(unsigned baud)
 	case 57600: data_rate.bit_rate = DSPAL_SIO_BITRATE_57600; break;
 
 	case 115200: data_rate.bit_rate = DSPAL_SIO_BITRATE_115200; break;
+
+	case 230400: data_rate.bit_rate = DSPAL_SIO_BITRATE_230400; break;
 
 	default:
 		PX4_ERR("ERR: unknown baudrate: %d", baud);

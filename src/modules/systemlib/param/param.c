@@ -48,6 +48,7 @@
 #include <px4_spi.h>
 #include <string.h>
 #include <stdbool.h>
+#include <float.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -147,7 +148,6 @@ FLASH_PARAMS_EXPOSE UT_array        *param_values;
 FLASH_PARAMS_EXPOSE const UT_icd    param_icd = {sizeof(struct param_wbuf_s), NULL, NULL, NULL};
 
 #if !defined(PARAM_NO_ORB)
-
 /** parameter update topic handle */
 static orb_advert_t param_topic = NULL;
 #endif
@@ -227,19 +227,9 @@ param_find_changed(param_t param)
 	param_assert_locked();
 
 	if (param_values != NULL) {
-#if 0	/* utarray_find requires bsearch, not available */
 		struct param_wbuf_s key;
 		key.param = param;
 		s = utarray_find(param_values, &key, param_compare_values);
-#else
-
-		while ((s = (struct param_wbuf_s *)utarray_next(param_values, s)) != NULL) {
-			if (s->param == param) {
-				break;
-			}
-		}
-
-#endif
 	}
 
 	return s;
@@ -271,17 +261,32 @@ param_notify_changes(bool is_saved)
 param_t
 param_find_internal(const char *name, bool notification)
 {
-	param_t param;
+	param_t middle;
+	param_t front = 0;
+	param_t last = get_param_info_count();
 
-	/* perform a linear search of the known parameters */
+	/* perform a binary search of the known parameters */
 
-	for (param = 0; handle_in_range(param); param++) {
-		if (!strcmp(param_info_base[param].name, name)) {
+	while (front <= last) {
+		middle = front + (last - front) / 2;
+		int ret = strcmp(name, param_info_base[middle].name);
+
+		if (ret == 0) {
 			if (notification) {
-				param_set_used_internal(param);
+				param_set_used_internal(middle);
 			}
 
-			return param;
+			return middle;
+
+		} else if (middle == front) {
+			/* An end point has been hit, but there has been no match */
+			break;
+
+		} else if (ret < 0) {
+			last = middle;
+
+		} else {
+			front = middle;
 		}
 	}
 
@@ -612,7 +617,6 @@ const void *param_get_value_ptr_external(param_t param)
 {
 	return param_get_value_ptr(param);
 }
-
 #endif
 
 int
@@ -795,7 +799,6 @@ param_save_default(void)
 #else
 	res = flash_param_save();
 #endif
-
 	return res;
 }
 
@@ -829,16 +832,12 @@ param_load_default(void)
 	return 0;
 }
 
-#if defined (CONFIG_ARCH_BOARD_PX4FMU_V4)
-//struct spi_dev_s *dev = nullptr;
-irqstate_t irq_state;
-#endif
-
 static void
 param_bus_lock(bool lock)
 {
 
 #if defined (CONFIG_ARCH_BOARD_PX4FMU_V4)
+
 	// FMUv4 has baro and FRAM on the same bus,
 	// as this offers on average a 100% silent
 	// bus for the baro operation
@@ -851,6 +850,9 @@ param_bus_lock(bool lock)
 	// SPI_LOCK(dev, lock);
 
 	// we lock like this for Pixracer for now
+
+	static irqstate_t irq_state = 0;
+
 	if (lock) {
 		irq_state = px4_enter_critical_section();
 

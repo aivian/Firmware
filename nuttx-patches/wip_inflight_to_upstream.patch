@@ -1,0 +1,102 @@
+diff --git NuttX/nuttx/drivers/usbdev/cdcacm.c NuttX/nuttx/drivers/usbdev/cdcacm.c
+index 64e2e68..15f92dd 100644
+--- NuttX/nuttx/drivers/usbdev/cdcacm.c
++++ NuttX/nuttx/drivers/usbdev/cdcacm.c
+@@ -243,6 +243,12 @@ static const struct uart_ops_s g_uartops =
+ #ifdef CONFIG_SERIAL_IFLOWCONTROL
+   cdcuart_rxflowcontrol, /* rxflowcontrol */
+ #endif
++#ifdef CONFIG_SERIAL_DMA
++  NULL,                  /* dmasend */
++  NULL,                  /* dmareceive */
++  NULL,                  /* dmarxfree */
++  NULL,                  /* dmatxavail */
++#endif
+   NULL,                  /* send */
+   cdcuart_txint,         /* txinit */
+   NULL,                  /* txready */
+diff --git NuttX/nuttx/arch/arm/src/stm32/stm32_serial.c NuttX/nuttx/arch/arm/src/stm32/stm32_serial.c
+index 644c810..10919e8 100644
+--- NuttX/nuttx/arch/arm/src/stm32/stm32_serial.c
++++ NuttX/nuttx/arch/arm/src/stm32/stm32_serial.c
+@@ -1945,11 +1945,11 @@ static int up_interrupt_common(struct up_dev_s *priv)
+ static int up_ioctl(struct file *filep, int cmd, unsigned long arg)
+ {
+ #if defined(CONFIG_SERIAL_TERMIOS) || defined(CONFIG_SERIAL_TIOCSERGSTRUCT) \
+-    || defined(CONFIG_STM32F7_SERIALBRK_BSDCOMPAT)
++    || defined(CONFIG_STM32_SERIALBRK_BSDCOMPAT)
+   struct inode      *inode = filep->f_inode;
+   struct uart_dev_s *dev   = inode->i_private;
+ #endif
+-#if defined(CONFIG_SERIAL_TERMIOS) || defined(CONFIG_STM32F7_SERIALBRK_BSDCOMPAT)
++#if defined(CONFIG_SERIAL_TERMIOS) || defined(CONFIG_STM32_SERIALBRK_BSDCOMPAT)
+   struct up_dev_s   *priv  = (struct up_dev_s *)dev->priv;
+ #endif
+   int                ret    = OK;
+diff --git NuttX/nuttx/arch/arm/src/stm32/stm32f40xxx_rcc.c NuttX/nuttx/arch/arm/src/stm32/stm32f40xxx_rcc.c
+index 5e2ba73..adda863 100644
+--- NuttX/nuttx/arch/arm/src/stm32/stm32f40xxx_rcc.c
++++ NuttX/nuttx/arch/arm/src/stm32/stm32f40xxx_rcc.c
+@@ -95,10 +95,10 @@ static inline void rcc_reset(void)
+ 
+   putreg32(0x00000000, STM32_RCC_CFGR);
+ 
+-  /* Reset HSION, HSEON, CSSON and PLLON bits */
++  /* Reset HSEON, CSSON and PLLON bits */
+ 
+   regval  = getreg32(STM32_RCC_CR);
+-  regval &= ~(RCC_CR_HSION | RCC_CR_HSEON | RCC_CR_CSSON | RCC_CR_PLLON);
++  regval &= ~(RCC_CR_HSEON | RCC_CR_CSSON | RCC_CR_PLLON);
+   putreg32(regval, STM32_RCC_CR);
+ 
+   /* Reset PLLCFGR register to reset default */
+@@ -619,11 +619,6 @@ static void stm32_stdclockconfig(void)
+   volatile int32_t timeout;
+ 
+ #ifdef STM32_BOARD_USEHSI
+-  /* Enable Internal High-Speed Clock (HSI) */
+-
+-  regval  = getreg32(STM32_RCC_CR);
+-  regval |= RCC_CR_HSION;           /* Enable HSI */
+-  putreg32(regval, STM32_RCC_CR);
+ 
+   /* Wait until the HSI is ready (or until a timeout elapsed) */
+ 
+diff --git NuttX/nuttx/arch/arm/src/stm32/stm32_flash.c NuttX/nuttx/arch/arm/src/stm32/stm32_flash.c
+index 73f1419..9ac38a1 100644
+--- NuttX/nuttx/arch/arm/src/stm32/stm32_flash.c
++++ NuttX/nuttx/arch/arm/src/stm32/stm32_flash.c
+@@ -231,12 +231,14 @@ ssize_t up_progmem_erasepage(size_t page)
+       return -EFAULT;
+     }
+ 
+-  /* Get flash ready and begin erasing single page */
+-
++#if !defined(CONFIG_STM32_STM32F40XX)
+   if (!(getreg32(STM32_RCC_CR) & RCC_CR_HSION))
+     {
+       return -EPERM;
+     }
++#endif
++
++  /* Get flash ready and begin erasing single page */
+ 
+   stm32_flash_unlock();
+ 
+@@ -318,12 +320,14 @@ ssize_t up_progmem_write(size_t addr, const void *buf, size_t count)
+       return -EFAULT;
+     }
+ 
+-  /* Get flash ready and begin flashing */
+-
++#if !defined(CONFIG_STM32_STM32F40XX)
+   if (!(getreg32(STM32_RCC_CR) & RCC_CR_HSION))
+     {
+       return -EPERM;
+     }
++#endif
++
++  /* Get flash ready and begin flashing */
+ 
+   stm32_flash_unlock();
+ 

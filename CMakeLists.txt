@@ -117,6 +117,19 @@
 #
 #=============================================================================
 
+if("${CMAKE_VERSION}" VERSION_LESS 2.8.0)
+	message("Not a valid CMake version")
+	message("On Ubuntu 16.04, install or upgrade via:")
+	message("	sudo apt-get install cmake")
+	message("")
+	message("Official website:")
+	message("	wget https://cmake.org/files/v3.4/cmake-3.4.3-Linux-x86_64.sh")
+	message("	chmod +x cmake-3.4.3-Linux-x86_64.sh")
+	message("	sudo mkdir /opt/cmake-3.4.3")
+	message("	sudo ./cmake-3.4.3-Linux-x86_64.sh --prefix=/opt/cmake-3.4.3 --exclude-subdir")
+	message("	export PATH=/opt/cmake-3.4.3/bin:$$PATH")
+endif()
+
 # Warning: Changing this modifies CMake's internal workings
 # and leads to wrong toolchain detection
 cmake_minimum_required(VERSION 2.8 FATAL_ERROR)
@@ -128,10 +141,6 @@ execute_process(
 	COMMAND Tools/check_submodules.sh
 	WORKING_DIRECTORY ${PX4_SOURCE_DIR}
 	)
-
-# Use clang
-#SET (CMAKE_C_COMPILER /usr/bin/clang-3.6)
-#SET (CMAKE_CXX_COMPILER /usr/bin/clang++-3.6)
 
 #=============================================================================
 # parameters
@@ -159,7 +168,29 @@ list(GET config_args 1 BOARD)
 list(GET config_args 2 LABEL)
 set(target_name "${OS}-${BOARD}-${LABEL}")
 
-message(STATUS "${target_name}")
+# version info from git
+execute_process(
+	COMMAND Tools/tag_to_version.py --root ${PX4_SOURCE_DIR}
+	OUTPUT_VARIABLE version
+	WORKING_DIRECTORY ${PX4_SOURCE_DIR}
+	)
+execute_process(
+	COMMAND git describe --always --tags
+	OUTPUT_VARIABLE git_tag
+	OUTPUT_STRIP_TRAILING_WHITESPACE
+	WORKING_DIRECTORY ${PX4_SOURCE_DIR}
+	)
+message(STATUS "PX4 VERSION: ${git_tag}")
+message(STATUS "CONFIG: ${target_name}")
+
+# The URL for the elf file for crash logging
+if (DEFINED ENV{BUILD_URI})
+	set(BUILD_URI $ENV{BUILD_URI})
+else()
+	set(BUILD_URI "localhost")
+endif()
+
+add_definitions(-DBUILD_URI=${BUILD_URI})
 
 # Define GNU standard installation directories
 include(GNUInstallDirs)
@@ -173,10 +204,12 @@ if(NOT CMAKE_INSTALL_PREFIX)
 		set(CMAKE_INSTALL_PREFIX "/usr" CACHE PATH "Install path prefix" FORCE)
 	endif()
 endif()
-message(STATUS "CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
+if (CMAKE_INSTALL_PREFIX)
+	message(STATUS "CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
+endif()
 
 list(APPEND CMAKE_MODULE_PATH "${PX4_SOURCE_DIR}/cmake")
-message(STATUS "cmake module path: ${CMAKE_MODULE_PATH}")
+message(STATUS "CMAKE_MODULE_PATH: ${CMAKE_MODULE_PATH}")
 set(config_module "configs/${CONFIG}")
 include(${config_module})
 
@@ -223,10 +256,6 @@ if (NOT ${CMAKE_VERSION} VERSION_LESS 3.1.0)
 	cmake_policy(SET CMP0054 NEW) # don't dereference quoted variables
 endif()
 
-set(version_major 1)
-set(version_minor 5)
-set(version_patch 0)
-set(version "${version_major}.${version_minor}.${version_patch}")
 set(package-contact "px4users@googlegroups.com")
 
 #=============================================================================
@@ -242,16 +271,15 @@ if (CATKIN_DEVEL_PREFIX)
 	else()
 		message(FATAL_ERROR "catkin not found")
 	endif()
-else()
-	message(STATUS "catkin DISABLED")
 endif()
 
 find_package(PythonInterp REQUIRED)
 
 #=============================================================================
-# cmake modules
+# cmake testing
 #
 enable_testing()
+include(CTest)
 
 #=============================================================================
 # generate compile command database
@@ -270,21 +298,39 @@ foreach(var ${required_variables})
 	endif()
 endforeach()
 
+# print full c compiler version
+execute_process(COMMAND ${CMAKE_C_COMPILER} --version
+		OUTPUT_VARIABLE c_compiler_version
+		OUTPUT_STRIP_TRAILING_WHITESPACE
+		)
+STRING(REGEX MATCH "[^\n]*" c_compiler_version_short ${c_compiler_version})
+message(STATUS "C compiler: ${c_compiler_version_short}")
+
+# print full c++ compiler version
+execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version
+		OUTPUT_VARIABLE cxx_compiler_version
+		OUTPUT_STRIP_TRAILING_WHITESPACE
+		)
+STRING(REGEX MATCH "[^\n]*" cxx_compiler_version_short ${cxx_compiler_version})
+message(STATUS "C++ compiler: ${cxx_compiler_version_short}")
+
+
 #=============================================================================
 # git
 #
-px4_add_git_submodule(TARGET git_genmsg PATH "Tools/genmsg")
-px4_add_git_submodule(TARGET git_gencpp PATH "Tools/gencpp")
-px4_add_git_submodule(TARGET git_mavlink PATH "mavlink/include/mavlink/v1.0")
-px4_add_git_submodule(TARGET git_gtest PATH "unittests/gtest")
-px4_add_git_submodule(TARGET git_uavcan PATH "src/modules/uavcan/libuavcan")
-px4_add_git_submodule(TARGET git_nuttx PATH "NuttX")
+px4_add_git_submodule(TARGET git_cmake_hexagon PATH "cmake/cmake_hexagon")
 px4_add_git_submodule(TARGET git_driverframework PATH "src/lib/DriverFramework")
 px4_add_git_submodule(TARGET git_ecl PATH "src/lib/ecl")
-px4_add_git_submodule(TARGET git_jmavsim PATH "Tools/jMAVSim")
 px4_add_git_submodule(TARGET git_gazebo PATH "Tools/sitl_gazebo")
+px4_add_git_submodule(TARGET git_gencpp PATH "Tools/gencpp")
+px4_add_git_submodule(TARGET git_genmsg PATH "Tools/genmsg")
+px4_add_git_submodule(TARGET git_gtest PATH "unittests/gtest")
+px4_add_git_submodule(TARGET git_jmavsim PATH "Tools/jMAVSim")
 px4_add_git_submodule(TARGET git_matrix PATH "src/lib/matrix")
-px4_add_git_submodule(TARGET git_cmake_hexagon PATH "cmake/cmake_hexagon")
+px4_add_git_submodule(TARGET git_mavlink PATH "mavlink/include/mavlink/v1.0")
+px4_add_git_submodule(TARGET git_mavlink2 PATH "mavlink/include/mavlink/v2.0")
+px4_add_git_submodule(TARGET git_nuttx PATH "NuttX")
+px4_add_git_submodule(TARGET git_uavcan PATH "src/modules/uavcan/libuavcan")
 
 add_custom_target(submodule_clean
 	WORKING_DIRECTORY ${PX4_SOURCE_DIR}
@@ -337,16 +383,28 @@ add_definitions(${definitions})
 #=============================================================================
 # source code generation
 #
+
 add_subdirectory(msg)
 px4_generate_messages(TARGET msg_gen
 	MSG_FILES ${msg_files}
 	OS ${OS}
+	INCLUDES ${msg_include_paths}
 	DEPENDS git_genmsg git_gencpp prebuild_targets
 	)
-px4_generate_parameters_xml(OUT parameters.xml BOARD ${BOARD})
+px4_generate_parameters_xml(OUT parameters.xml 
+	BOARD ${BOARD}
+	SCOPE ${PX4_SOURCE_DIR}/cmake/configs/${OS}_${BOARD}_${LABEL}.cmake
+	OVERRIDES ${PARAM_DEFAULT_OVERRIDES})
 px4_generate_airframes_xml(OUT airframes.xml BOARD ${BOARD})
 add_custom_target(xml_gen
 	DEPENDS parameters.xml airframes.xml)
+
+if(NOT "${config_nuttx_config}" STREQUAL "bootloader")
+install(FILES
+	${CMAKE_CURRENT_BINARY_DIR}/airframes.xml
+	${CMAKE_CURRENT_BINARY_DIR}/parameters.xml
+	DESTINATION .)
+endif()
 
 #=============================================================================
 # external projects
@@ -413,7 +471,7 @@ set(module_external_libraries "${module_external_libraries}" CACHE INTERNAL "mod
 
 add_subdirectory(src/firmware/${OS})
 
-#add_dependencies(df_driver_framework nuttx_export_${CONFIG}.stamp)
+#add_dependencies(df_driver_framework nuttx_export_${CONFIG})
 if (NOT "${OS}" STREQUAL "nuttx")
 endif()
 
@@ -437,19 +495,13 @@ endif()
 #=============================================================================
 # generate git version
 #
-px4_create_git_hash_header(HEADER ${PX4_BINARY_DIR}/build_git_version.h)
+px4_create_git_hash_header(OUT ${PX4_BINARY_DIR}/build_git_version.h)
 
 #=============================================================================
 # packaging
 #
 # Important to having packaging at end of cmake file.
 #
-execute_process(
-	COMMAND git describe --always --tags
-	OUTPUT_VARIABLE git_tag
-	OUTPUT_STRIP_TRAILING_WHITESPACE
-	WORKING_DIRECTORY ${PX4_SOURCE_DIR}
-	)
 set(CPACK_PACKAGE_NAME ${PROJECT_NAME}-${CONFIG})
 set(CPACK_PACKAGE_VERSION ${version})
 set(CPACK_PACKAGE_CONTACT ${package-contact})
@@ -462,7 +514,7 @@ set(CPACK_GENERATOR "ZIP")
 set(CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}-${CONFIG}-${git_tag}")
 set(CPACK_SOURCE_PACKAGE_FILE_NAME "${PROJECT_NAME}-${version}")
 set(CPACK_SOURCE_GENERATOR "ZIP;TBZ2")
-set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
+set(CPACK_PACKAGING_INSTALL_PREFIX "")
 set(CPACK_SET_DESTDIR "OFF")
 if ("${CMAKE_SYSTEM}" MATCHES "Linux")
 	find_program(DPKG_PROGRAM dpkg)

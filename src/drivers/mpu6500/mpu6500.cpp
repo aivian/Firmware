@@ -1833,6 +1833,9 @@ MPU6500::measure()
 	arb.temperature_raw = report.temp;
 	arb.temperature = _last_temperature;
 
+	/* return device ID */
+	arb.device_id = _device_id.devid;
+
 	grb.x_raw = report.gyro_x;
 	grb.y_raw = report.gyro_y;
 	grb.z_raw = report.gyro_z;
@@ -1865,6 +1868,9 @@ MPU6500::measure()
 
 	grb.temperature_raw = report.temp;
 	grb.temperature = _last_temperature;
+
+	/* return device ID */
+	grb.device_id = _gyro->_device_id.devid;
 
 	_accel_reports->force(&arb);
 	_gyro_reports->force(&grb);
@@ -2084,7 +2090,7 @@ start(bool external_bus, enum Rotation rotation, int range)
 fail:
 
 	if (*g_dev_ptr != nullptr) {
-		delete(*g_dev_ptr);
+		delete *g_dev_ptr;
 		*g_dev_ptr = nullptr;
 	}
 

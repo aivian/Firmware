@@ -1075,6 +1075,9 @@ L3GD20::measure()
 	report.scaling = _gyro_range_scale;
 	report.range_rad_s = _gyro_range_rad_s;
 
+	/* return device ID */
+	report.device_id = _device_id.devid;
+
 	_reports->force(&report);
 
 	if (gyro_notify) {

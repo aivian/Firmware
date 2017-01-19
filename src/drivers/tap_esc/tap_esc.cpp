@@ -232,7 +232,7 @@ TAP_ESC::init()
 
 	ASSERT(!_initialized);
 
-	/* Respect boot time requierd by the ESC FW */
+	/* Respect boot time required by the ESC FW */
 
 	hrt_abstime uptime_us = hrt_absolute_time();
 
@@ -378,7 +378,7 @@ TAP_ESC::subscribe()
 
 		if (unsub_groups & (1 << i)) {
 			DEVICE_DEBUG("unsubscribe from actuator_controls_%d", i);
-			::close(_control_subs[i]);
+			orb_unsubscribe(_control_subs[i]);
 			_control_subs[i] = -1;
 		}
 
