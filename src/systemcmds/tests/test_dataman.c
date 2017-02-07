@@ -46,7 +46,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <debug.h>
 
 #include <arch/board/board.h>
 
@@ -55,8 +54,7 @@
 #include <drivers/drv_hrt.h>
 #include <semaphore.h>
 
-
-#include "tests.h"
+#include "tests_main.h"
 
 #include "dataman/dataman.h"
 
@@ -171,6 +169,8 @@ int test_dataman(int argc, char *argv[])
 		av[0] = a;
 		av[1] = 0;
 		px4_sem_init(sems + i, 1, 0);
+		/* sems use case is a signal */
+		px4_sem_setprotocol(&sems, SEM_PRIO_NONE);
 
 		/* start the task */
 		if ((task = px4_task_spawn_cmd("dataman", SCHED_DEFAULT, SCHED_PRIORITY_MAX - 5, 2048, task_main, (void *)av)) <= 0) {

@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2012-2016 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2012-2017 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -111,12 +111,11 @@
 #include <uORB/topics/vehicle_land_detected.h>
 #include <uORB/topics/commander_state.h>
 #include <uORB/topics/cpuload.h>
-#include <uORB/topics/low_stack.h>
+#include <uORB/topics/task_stack_info.h>
 
 #include <systemlib/systemlib.h>
 #include <systemlib/param/param.h>
 #include <systemlib/perf_counter.h>
-#include <systemlib/git_version.h>
 #include <systemlib/printload.h>
 #include <systemlib/mavlink_log.h>
 #include <version/version.h>
@@ -157,7 +156,7 @@ static bool _extended_logging = false;
 static bool _gpstime_only = false;
 static int32_t _utc_offset = 0;
 
-#ifndef __PX4_POSIX_EAGLE
+#if !defined(__PX4_POSIX_EAGLE) && !defined(__PX4_POSIX_EXCELSIOR)
 #define MOUNTPOINT PX4_ROOTFSDIR"/fs/microsd"
 #else
 #define MOUNTPOINT "/root"
@@ -394,7 +393,7 @@ int sdlog2_main(int argc, char *argv[])
 		return 0;
 	}
 
-	if (!strcmp(argv[1], "on")) {
+	if (!strncmp(argv[1], "on", 2)) {
 		struct vehicle_command_s cmd;
 		cmd.command = VEHICLE_CMD_PREFLIGHT_STORAGE;
 		cmd.param1 = -1;
@@ -494,7 +493,6 @@ int create_log_dir()
 
 			/* dir exists already */
 			dir_number++;
-			continue;
 		}
 
 		if (dir_number >= MAX_NO_LOGFOLDER) {
@@ -746,7 +744,7 @@ void sdlog2_start_log()
 	/* initialize log buffer emptying thread */
 	pthread_attr_init(&logwriter_attr);
 
-#ifndef __PX4_POSIX_EAGLE
+#if !defined(__PX4_POSIX_EAGLE) && !defined(__PX4_POSIX_EXCELSIOR)
 	struct sched_param param;
 	(void)pthread_attr_getschedparam(&logwriter_attr, &param);
 	/* low priority, as this is expensive disk I/O. */
@@ -873,8 +871,9 @@ int write_version(int fd)
 	};
 
 	/* fill version message and write it */
-	strncpy(log_msg_VER.body.fw_git, px4_git_version, sizeof(log_msg_VER.body.fw_git));
-	strncpy(log_msg_VER.body.arch, HW_ARCH, sizeof(log_msg_VER.body.arch));
+	strncpy(log_msg_VER.body.fw_git, px4_firmware_version_string(), sizeof(log_msg_VER.body.fw_git));
+	strncpy(log_msg_VER.body.arch, px4_board_name(), sizeof(log_msg_VER.body.arch));
+	log_msg_VER.body.arch[sizeof(log_msg_VER.body.arch) - 1] = '\0';
 	return write(fd, &log_msg_VER, sizeof(log_msg_VER));
 }
 
@@ -894,6 +893,7 @@ int write_parameters(int fd)
 	for (param_t param = 0; param < params_cnt; param++) {
 		/* fill parameter message and write it */
 		strncpy(log_msg_PARM.body.name, param_name(param), sizeof(log_msg_PARM.body.name));
+		log_msg_PARM.body.name[sizeof(log_msg_PARM.body.name) - 1] = '\0';
 		float value = NAN;
 
 		switch (param_type(param)) {
@@ -929,16 +929,7 @@ bool copy_if_updated_multi(orb_id_t topic, int multi_instance, int *handle, void
 	bool updated = false;
 
 	if (*handle < 0) {
-#if __PX4_POSIX_EAGLE
-		// The orb_exists call doesn't work correctly on Snapdragon yet.
-		// (No data gets sent from the QURT to the Linux side because there
-		// are no subscribers. However, there won't be any subscribers, if
-		// they check using orb_exists() before subscribing.)
-		if (true)
-#else
 		if (OK == orb_exists(topic, multi_instance))
-#endif
-
 		{
 			*handle = orb_subscribe_multi(topic, multi_instance);
 			/* copy first data */
@@ -1223,7 +1214,7 @@ int sdlog2_thread_main(int argc, char *argv[])
 		struct vehicle_land_detected_s land_detected;
 		struct cpuload_s cpuload;
 		struct vehicle_gps_position_s dual_gps_pos;
-		struct low_stack_s low_stack;
+		struct task_stack_info_s task_stack_info;
 	} buf;
 
 	memset(&buf, 0, sizeof(buf));
@@ -1337,7 +1328,7 @@ int sdlog2_thread_main(int argc, char *argv[])
 		int commander_state_sub;
 		int cpuload_sub;
 		int diff_pres_sub;
-		int low_stack_sub;
+		int task_stack_info_sub;
 	} subs;
 
 	subs.cmd_sub = -1;
@@ -1381,7 +1372,7 @@ int sdlog2_thread_main(int argc, char *argv[])
 	subs.commander_state_sub = -1;
 	subs.cpuload_sub = -1;
 	subs.diff_pres_sub = -1;
-	subs.low_stack_sub = -1;
+	subs.task_stack_info_sub = -1;
 
 	/* add new topics HERE */
 
@@ -2209,7 +2200,7 @@ int sdlog2_thread_main(int argc, char *argv[])
 				log_msg.body.log_INO2.s[8] = buf.innovations.airspeed_innov;
 				log_msg.body.log_INO2.s[9] = buf.innovations.airspeed_innov_var;
 				log_msg.body.log_INO2.s[10] = buf.innovations.beta_innov;
- 				log_msg.body.log_INO2.s[11] = buf.innovations.beta_innov_var;
+				log_msg.body.log_INO2.s[11] = buf.innovations.beta_innov_var;
 				LOGBUFFER_WRITE_AND_COUNT(EST5);
 
 				log_msg.msg_type = LOG_EST6_MSG;
@@ -2327,10 +2318,11 @@ int sdlog2_thread_main(int argc, char *argv[])
 		}
 
 		/* --- STACK --- */
-		if (copy_if_updated(ORB_ID(low_stack), &subs.low_stack_sub, &buf.low_stack)) {
+		if (copy_if_updated(ORB_ID(task_stack_info), &subs.task_stack_info_sub, &buf.task_stack_info)) {
 			log_msg.msg_type = LOG_STCK_MSG;
-			log_msg.body.log_STCK.stack_free = buf.low_stack.stack_free;
-			strncpy(log_msg.body.log_STCK.task_name, (char*)buf.low_stack.task_name, sizeof(log_msg.body.log_STCK.task_name));
+			log_msg.body.log_STCK.stack_free = buf.task_stack_info.stack_free;
+			strncpy(log_msg.body.log_STCK.task_name, (char*)buf.task_stack_info.task_name,
+					sizeof(log_msg.body.log_STCK.task_name));
 			LOGBUFFER_WRITE_AND_COUNT(STCK);
 		}
 

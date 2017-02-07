@@ -43,6 +43,7 @@
  */
 
 #include <px4_config.h>
+#include <px4_tasks.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -461,7 +462,7 @@ int ex_fixedwing_control_main(int argc, char *argv[])
 						 SCHED_PRIORITY_MAX - 20,
 						 2048,
 						 fixedwing_control_thread_main,
-						 (argv) ? (char *const *)&argv[2] : (char *const *)NULL);
+						 (argv) ? (char *const *)&argv[2] : (char *const *)nullptr);
 		thread_running = true;
 		exit(0);
 	}

@@ -44,12 +44,12 @@
 #include <px4_config.h>
 #include <px4_defines.h>
 #include <px4_posix.h>
+#include <px4_tasks.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <systemlib/systemlib.h>
 #include <systemlib/err.h>
 #include <queue.h>
 #include <string.h>
@@ -177,7 +177,7 @@ static px4_sem_t g_sys_state_mutex;
 /* The data manager store file handle and file name */
 static int g_fd = -1;
 static int g_task_fd = -1;
-#ifdef __PX4_POSIX_EAGLE
+#if defined(__PX4_POSIX_EAGLE) || defined(__PX4_POSIX_EXCELSIOR)
 static const char *default_device_path = PX4_ROOTFSDIR"/dataman";
 #else
 static const char *default_device_path = PX4_ROOTFSDIR"/fs/microsd/dataman";
@@ -274,6 +274,10 @@ create_work_item(void)
 	/* If we got one then lock the item*/
 	if (item) {
 		px4_sem_init(&item->wait_sem, 1, 0);        /* Caller will wait on this... initially locked */
+
+		/* item->wait_sem use case is a signal */
+
+		px4_sem_setprotocol(&item->wait_sem, SEM_PRIO_NONE);
 	}
 
 	/* return the item pointer, or NULL if all failed */
@@ -449,10 +453,11 @@ _file_write(dm_item_t item, unsigned char index, dm_persitence_t persistence, co
 	len = -1;
 
 	/* Seek to the right spot in the data manager file and write the data item */
-	if (lseek(g_task_fd, offset, SEEK_SET) == offset)
+	if (lseek(g_task_fd, offset, SEEK_SET) == offset) {
 		if ((len = write(g_task_fd, buffer, count)) == count) {
 			fsync(g_task_fd);        /* Make sure data is written to physical media */
 		}
+	}
 
 	/* Make sure the write succeeded */
 	if (len != count) {
@@ -922,6 +927,10 @@ task_main(int argc, char *argv[])
 
 	px4_sem_init(&g_work_queued_sema, 1, 0);
 
+	/* g_work_queued_sema use case is a signal */
+
+	px4_sem_setprotocol(&g_work_queued_sema, SEM_PRIO_NONE);
+
 	if (!on_disk) {
 
 		/* In memory */
@@ -1017,11 +1026,11 @@ task_main(int argc, char *argv[])
 	 */
 	g_on_disk = on_disk;
 
-	if (g_on_disk) {
+	if (g_on_disk && sys_restart_val != DM_INIT_REASON_POWER_ON) {
 		PX4_INFO("%s, data manager file '%s' size is %d bytes",
 			 restart_type_str, k_data_manager_device_path, max_offset);
 
-	} else {
+	} else if (!g_on_disk) {
 		PX4_INFO("%s, data manager RAM size is %d bytes",
 			 restart_type_str, max_offset);
 	}
@@ -1134,6 +1143,10 @@ start(void)
 	int task;
 
 	px4_sem_init(&g_init_sema, 1, 0);
+
+	/* g_init_sema use case is a signal */
+
+	px4_sem_setprotocol(&g_init_sema, SEM_PRIO_NONE);
 
 	/* start the worker thread with low priority for disk IO */
 	if ((task = px4_task_spawn_cmd("dataman", SCHED_DEFAULT, SCHED_PRIORITY_DEFAULT - 10, 1200, task_main, NULL)) <= 0) {
@@ -1263,5 +1276,5 @@ dataman_main(int argc, char *argv[])
 		return -1;
 	}
 
-	return 1;
+	return 0;
 }

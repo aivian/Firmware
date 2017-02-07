@@ -44,6 +44,7 @@
 #include <px4_config.h>
 #include <px4_defines.h>
 #include <px4_posix.h>
+#include <px4_tasks.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -69,7 +70,6 @@
 #include <lib/mathlib/mathlib.h>
 #include <lib/geo/geo.h>
 
-#include <systemlib/systemlib.h>
 #include <systemlib/perf_counter.h>
 #include <systemlib/err.h>
 
@@ -177,7 +177,7 @@ int attitude_estimator_ekf_main(int argc, char *argv[])
 					      SCHED_PRIORITY_MAX - 5,
 					      7000,
 					      attitude_estimator_ekf_thread_main,
-					      (argv) ? (char * const *)&argv[2] : (char * const *)NULL);
+					      (argv) ? (char * const *)&argv[2] : (char * const *)nullptr);
 		return 0;
 	}
 

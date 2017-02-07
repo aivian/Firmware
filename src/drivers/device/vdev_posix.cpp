@@ -67,7 +67,7 @@ extern "C" {
 	inline bool valid_fd(int fd)
 	{
 		pthread_mutex_lock(&filemutex);
-		bool ret = (fd < PX4_MAX_FD && fd >= 0 && filemap[fd] != NULL);
+		bool ret = (fd < PX4_MAX_FD && fd >= 0 && filemap[fd] != nullptr);
 		pthread_mutex_unlock(&filemutex);
 		return ret;
 	}
@@ -75,7 +75,7 @@ extern "C" {
 	inline VDev *get_vdev(int fd)
 	{
 		pthread_mutex_lock(&filemutex);
-		bool valid = (fd < PX4_MAX_FD && fd >= 0 && filemap[fd] != NULL);
+		bool valid = (fd < PX4_MAX_FD && fd >= 0 && filemap[fd] != nullptr);
 		VDev *dev;
 
 		if (valid) {
@@ -115,7 +115,7 @@ extern "C" {
 			pthread_mutex_lock(&filemutex);
 
 			for (i = 0; i < PX4_MAX_FD; ++i) {
-				if (filemap[i] == 0) {
+				if (filemap[i] == nullptr) {
 					filemap[i] = new device::file_t(flags, dev, i);
 					break;
 				}
@@ -278,7 +278,11 @@ extern "C" {
 		}
 
 		PX4_DEBUG("Called px4_poll timeout = %d", timeout);
+
 		px4_sem_init(&sem, 0, 0);
+
+		// sem use case is a signal
+		px4_sem_setprotocol(&sem, SEM_PRIO_NONE);
 
 		// Go through all fds and check them for a pollable state
 		bool fd_pollable = false;
@@ -286,7 +290,7 @@ extern "C" {
 		for (i = 0; i < nfds; ++i) {
 			fds[i].sem     = &sem;
 			fds[i].revents = 0;
-			fds[i].priv    = NULL;
+			fds[i].priv    = nullptr;
 
 			VDev *dev = get_vdev(fds[i].fd);
 
@@ -409,6 +413,11 @@ extern "C" {
 	void px4_enable_sim_lockstep()
 	{
 		px4_sem_init(&lockstep_sem, 0, 0);
+
+		// lockstep_sem use case is a signal
+
+		px4_sem_setprotocol(&lockstep_sem, SEM_PRIO_NONE);
+
 		sim_lockstep = true;
 		sim_delay = false;
 	}
@@ -426,6 +435,11 @@ extern "C" {
 	bool px4_sim_delay_enabled()
 	{
 		return sim_delay;
+	}
+
+	bool px4_board_pwr(bool on)
+	{
+		return false;
 	}
 
 	const char *px4_get_device_names(unsigned int *handle)

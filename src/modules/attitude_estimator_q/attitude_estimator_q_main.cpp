@@ -41,6 +41,7 @@
 
 #include <px4_config.h>
 #include <px4_posix.h>
+#include <px4_tasks.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -68,7 +69,6 @@
 #include <mathlib/math/filter/LowPassFilter2p.hpp>
 #include <lib/geo/geo.h>
 
-#include <systemlib/systemlib.h>
 #include <systemlib/param/param.h>
 #include <systemlib/perf_counter.h>
 #include <systemlib/err.h>
@@ -188,9 +188,6 @@ private:
 	bool		_ext_hdg_good = false;
 
 	orb_advert_t	_mavlink_log_pub = nullptr;
-
-	perf_counter_t _update_perf;
-	perf_counter_t _loop_perf;
 
 	void update_parameters(bool force);
 
@@ -495,10 +492,13 @@ void AttitudeEstimatorQ::task_main()
 
 			/* attitude rates for control state */
 			ctrl_state.roll_rate = _rates(0);
-
 			ctrl_state.pitch_rate = _rates(1);
-
 			ctrl_state.yaw_rate = _rates(2);
+
+			/* TODO get bias estimates from estimator */
+			ctrl_state.roll_rate_bias = 0.0f;
+			ctrl_state.pitch_rate_bias = 0.0f;
+			ctrl_state.yaw_rate_bias = 0.0f;
 
 			ctrl_state.airspeed_valid = false;
 
