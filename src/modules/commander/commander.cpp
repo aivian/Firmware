@@ -81,6 +81,8 @@
 #include <float.h>
 #include <systemlib/hysteresis/hysteresis.h>
 
+#include <board_config.h>
+
 #include <sys/stat.h>
 #include <string.h>
 #include <math.h>
@@ -116,6 +118,7 @@
 #include <uORB/topics/vehicle_gps_position.h>
 #include <uORB/topics/vehicle_land_detected.h>
 #include <uORB/topics/vehicle_local_position.h>
+#include <uORB/topics/vehicle_status_flags.h>
 #include <uORB/topics/vtol_vehicle_status.h>
 
 typedef enum VEHICLE_MODE_FLAG
@@ -157,7 +160,7 @@ static constexpr uint8_t COMMANDER_MAX_GPS_NOISE = 60;		/**< Maximum percentage 
 #define HIL_ID_MAX 1999
 
 /* Mavlink log uORB handle */
-static orb_advert_t mavlink_log_pub = 0;
+static orb_advert_t mavlink_log_pub = nullptr;
 
 /* System autostart ID */
 static int autostart_id;
@@ -296,6 +299,9 @@ void *commander_low_prio_loop(void *arg);
 void answer_command(struct vehicle_command_s &cmd, unsigned result,
 					orb_advert_t &command_ack_pub, vehicle_command_ack_s &command_ack);
 
+/* publish vehicle status flags from the global variable status_flags*/
+void publish_status_flags(orb_advert_t vehicle_status_flags_pub);
+
 /**
  * check whether autostart ID is in the reserved range for HIL setups
  */
@@ -323,7 +329,7 @@ int commander_main(int argc, char *argv[])
 		daemon_task = px4_task_spawn_cmd("commander",
 					     SCHED_DEFAULT,
 					     SCHED_PRIORITY_DEFAULT + 40,
-					     3200,
+					     3600,
 					     commander_thread_main,
 					     (char * const *)&argv[0]);
 
@@ -1459,6 +1465,8 @@ int commander_thread_main(int argc, char *argv[])
 
 	orb_advert_t commander_state_pub = nullptr;
 
+	orb_advert_t vehicle_status_flags_pub = nullptr;
+
 	if (dm_read(DM_KEY_MISSION_STATE, 0, &mission, sizeof(mission_s)) == sizeof(mission_s)) {
 		if (mission.dataman_id >= 0 && mission.dataman_id <= 1) {
 			if (mission.count > 0) {
@@ -1714,7 +1722,7 @@ int commander_thread_main(int argc, char *argv[])
 	(void)pthread_attr_setschedparam(&commander_low_prio_attr, &param);
 #endif
 
-	pthread_create(&commander_low_prio_thread, &commander_low_prio_attr, commander_low_prio_loop, NULL);
+	pthread_create(&commander_low_prio_thread, &commander_low_prio_attr, commander_low_prio_loop, nullptr);
 	pthread_attr_destroy(&commander_low_prio_attr);
 
 	while (!thread_should_exit) {
@@ -2230,6 +2238,7 @@ int commander_thread_main(int argc, char *argv[])
 						mavlink_log_critical(&mavlink_log_pub, "LOW BATTERY, TAKEOFF DISCOURAGED");
 					}
 
+					status_changed = true;
 				} else if (!status_flags.usb_connected &&
 					   battery.warning == battery_status_s::BATTERY_WARNING_CRITICAL &&
 					   !critical_battery_voltage_actions_done) {
@@ -2237,6 +2246,8 @@ int commander_thread_main(int argc, char *argv[])
 
 					if (!armed.armed) {
 						mavlink_log_critical(&mavlink_log_pub, "CRITICAL BATTERY, SHUT SYSTEM DOWN");
+						usleep(200000);
+						px4_board_pwr(false);
 
 					} else {
 						if (low_bat_action == 1) {
@@ -3062,6 +3073,8 @@ int commander_thread_main(int argc, char *argv[])
 			have_taken_off_since_arming = false;
 		}
 
+		/* publish vehicle_status_flags */
+		publish_status_flags(vehicle_status_flags_pub);
 
 		/* publish internal state for logging purposes */
 		if (commander_state_pub != nullptr) {
@@ -3075,7 +3088,7 @@ int commander_thread_main(int argc, char *argv[])
 	}
 
 	/* wait for threads to complete */
-	ret = pthread_join(commander_low_prio_thread, NULL);
+	ret = pthread_join(commander_low_prio_thread, nullptr);
 
 	if (ret) {
 		warn("join failed: %d", ret);
@@ -3208,7 +3221,7 @@ control_status_leds(vehicle_status_s *status_local, const actuator_armed_s *actu
 			}
 		} else {
 			led_off(LED_GREEN);
-			
+
 			/* armed, solid */
 			led_on(LED_BLUE);
 		}
@@ -3249,7 +3262,7 @@ set_main_state_rc(struct vehicle_status_s *status_local)
 	/* set main state according to RC switches */
 	transition_result_t res = TRANSITION_DENIED;
 
-	// Note: even if status_flags.offboard_control_set_by_command is set 
+	// Note: even if status_flags.offboard_control_set_by_command is set
 	// we want to allow rc mode change to take precidence.  This is a safety
 	// feature, just in case offboard control goes crazy.
 
@@ -3978,6 +3991,10 @@ void *commander_low_prio_loop(void *arg)
 						answer_command(cmd, vehicle_command_s::VEHICLE_CMD_RESULT_ACCEPTED, command_ack_pub, command_ack);
 						calib_ret = do_gyro_calibration(&mavlink_log_pub);
 
+					} else if ((int)(cmd.param1) == 2 || (int)(cmd.param5) == 2 || (int)(cmd.param7) == 2) {
+						/* temperature calibration: handled in events module */
+						break;
+
 					} else if ((int)(cmd.param2) == 1) {
 						/* magnetometer calibration */
 						answer_command(cmd, vehicle_command_s::VEHICLE_CMD_RESULT_ACCEPTED, command_ack_pub, command_ack);
@@ -4165,5 +4182,127 @@ void *commander_low_prio_loop(void *arg)
 
 	px4_close(cmd_sub);
 
-	return NULL;
+	return nullptr;
+}
+
+void publish_status_flags(orb_advert_t vehicle_status_flags_pub){
+	struct vehicle_status_flags_s v_flags;
+	memset(&v_flags, 0, sizeof(v_flags));
+	/* set condition status flags */
+	if (status_flags.condition_calibration_enabled) {
+		v_flags.conditions |= vehicle_status_flags_s::CONDITION_CALIBRATION_ENABLE_MASK;
+	}
+	if (status_flags.condition_system_sensors_initialized) {
+		v_flags.conditions |= vehicle_status_flags_s::CONDITION_SYSTEM_SENSORS_INITIALIZED_MASK;
+	}
+	if (status_flags.condition_system_prearm_error_reported) {
+		v_flags.conditions |= vehicle_status_flags_s::CONDITION_SYSTEM_PREARM_ERROR_REPORTED_MASK;
+	}
+	if (status_flags.condition_system_hotplug_timeout) {
+		v_flags.conditions |= vehicle_status_flags_s::CONDITION_SYSTEM_HOTPLUG_TIMEOUT_MASK;
+	}
+	if (status_flags.condition_system_returned_to_home) {
+		v_flags.conditions |= vehicle_status_flags_s::CONDITION_SYSTEM_RETURNED_TO_HOME_MASK;
+	}
+	if (status_flags.condition_auto_mission_available) {
+		v_flags.conditions |= vehicle_status_flags_s::CONDITION_AUTO_MISSION_AVAILABLE_MASK;
+	}
+	if (status_flags.condition_global_position_valid) {
+		v_flags.conditions |= vehicle_status_flags_s::CONDITION_GLOBAL_POSITION_VALID_MASK;
+	}
+	if (status_flags.condition_home_position_valid) {
+		v_flags.conditions |= vehicle_status_flags_s::CONDITION_HOME_POSITION_VALID_MASK;
+	}
+	if (status_flags.condition_local_position_valid) {
+		v_flags.conditions |= vehicle_status_flags_s::CONDITION_LOCAL_POSITION_VALID_MASK;
+	}
+	if (status_flags.condition_local_altitude_valid) {
+		v_flags.conditions |= vehicle_status_flags_s::CONDITION_LOCAL_ALTITUDE_VALID_MASK;
+	}
+	if (status_flags.condition_local_altitude_valid) {
+		v_flags.conditions |= vehicle_status_flags_s::CONDITION_LOCAL_ALTITUDE_VALID_MASK;
+	}
+	if (status_flags.condition_airspeed_valid) {
+		v_flags.conditions |= vehicle_status_flags_s::CONDITION_AIRSPEED_VALID_MASK;
+	}
+	if (status_flags.condition_power_input_valid) {
+		v_flags.conditions |= vehicle_status_flags_s::CONDITION_POWER_INPUT_VALID_MASK;
+	}
+
+	/* set circuit breaker status flags */
+	if (status_flags.circuit_breaker_engaged_power_check) {
+		v_flags.circuit_breakers |= vehicle_status_flags_s::CIRCUIT_BREAKER_ENGAGED_POWER_CHECK_MASK;
+	}
+	if (status_flags.circuit_breaker_engaged_airspd_check) {
+		v_flags.circuit_breakers |= vehicle_status_flags_s::CIRCUIT_BREAKER_ENGAGED_AIRSPD_CHECK_MASK;
+	}
+	if (status_flags.circuit_breaker_engaged_enginefailure_check) {
+		v_flags.circuit_breakers |= vehicle_status_flags_s::CIRCUIT_BREAKER_ENGAGED_ENGINEFAILURE_CHECK_MASK;
+	}
+	if (status_flags.circuit_breaker_engaged_gpsfailure_check) {
+		v_flags.circuit_breakers |= vehicle_status_flags_s::CIRCUIT_BREAKER_ENGAGED_GPSFAILURE_CHECK_MASK;
+	}
+	if (status_flags.circuit_breaker_flight_termination_disabled) {
+		v_flags.circuit_breakers |= vehicle_status_flags_s::CIRCUIT_BREAKER_FLIGHT_TERMINATION_DISABLED_MASK;
+	}
+	if (status_flags.circuit_breaker_engaged_usb_check) {
+		v_flags.circuit_breakers |= vehicle_status_flags_s::CIRCUIT_BREAKER_ENGAGED_USB_CHECK_MASK;
+	}
+
+	/* set other status flags */
+	if (status_flags.usb_connected) {
+		v_flags.other_flags |= vehicle_status_flags_s::USB_CONNECTED_MASK;
+	}
+	if (status_flags.offboard_control_signal_found_once) {
+		v_flags.other_flags |= vehicle_status_flags_s::OFFBOARD_CONTROL_SIGNAL_FOUND_ONCE_MASK;
+	}
+	if (status_flags.offboard_control_signal_lost) {
+		v_flags.other_flags |= vehicle_status_flags_s::OFFBOARD_CONTROL_SIGNAL_LOST_MASK;
+	}
+	if (status_flags.offboard_control_signal_weak) {
+		v_flags.other_flags |= vehicle_status_flags_s::OFFBOARD_CONTROL_SIGNAL_WEAK_MASK;
+	}
+	if (status_flags.offboard_control_set_by_command) {
+		v_flags.other_flags |= vehicle_status_flags_s::OFFBOARD_CONTROL_SET_BY_COMMAND_MASK;
+	}
+	if (status_flags.offboard_control_loss_timeout) {
+		v_flags.other_flags |= vehicle_status_flags_s::OFFBOARD_CONTROL_LOSS_TIMEOUT_MASK;
+	}
+	if (status_flags.rc_signal_found_once) {
+		v_flags.other_flags |= vehicle_status_flags_s::RC_SIGNAL_FOUND_ONCE_MASK;
+	}
+	if (status_flags.rc_signal_lost_cmd) {
+		v_flags.other_flags |= vehicle_status_flags_s::RC_SIGNAL_LOST_CMD_MASK;
+	}
+	if (status_flags.rc_input_blocked) {
+		v_flags.other_flags |= vehicle_status_flags_s::RC_INPUT_BLOCKED_MASK;
+	}
+	if (status_flags.data_link_lost_cmd) {
+		v_flags.other_flags |= vehicle_status_flags_s::DATA_LINK_LOST_CMD_MASK;
+	}
+	if (status_flags.vtol_transition_failure) {
+		v_flags.other_flags |= vehicle_status_flags_s::VTOL_TRANSITION_FAILURE_MASK;
+	}
+	if (status_flags.vtol_transition_failure_cmd) {
+		v_flags.other_flags |= vehicle_status_flags_s::VTOL_TRANSITION_FAILURE_CMD_MASK;
+	}
+	if (status_flags.gps_failure) {
+		v_flags.other_flags |= vehicle_status_flags_s::GPS_FAILURE_MASK;
+	}
+	if (status_flags.gps_failure_cmd) {
+		v_flags.other_flags |= vehicle_status_flags_s::GPS_FAILURE_CMD_MASK;
+	}
+	if (status_flags.barometer_failure) {
+		v_flags.other_flags |= vehicle_status_flags_s::BAROMETER_FAILURE_MASK;
+	}
+	if (status_flags.ever_had_barometer_data) {
+		v_flags.other_flags |= vehicle_status_flags_s::EVER_HAD_BAROMETER_DATA_MASK;
+	}
+
+	/* publish vehicle_status_flags */
+	if (vehicle_status_flags_pub != nullptr) {
+		orb_publish(ORB_ID(vehicle_status_flags), vehicle_status_flags_pub, &v_flags);
+	}else{
+		vehicle_status_flags_pub = orb_advertise(ORB_ID(vehicle_status_flags), &v_flags);
+	}
 }

@@ -67,21 +67,17 @@ VotedSensorsUpdate::VotedSensorsUpdate(const Parameters &parameters)
 	memset(&_corrections, 0, sizeof(_corrections));
 
 	for (unsigned i = 0; i < 3; i++) {
-		_corrections.gyro_scale[i] = 1.0f;
-		_corrections.accel_scale[i] = 1.0f;
-
-		for (unsigned j = 0; j < SENSOR_COUNT_MAX; j++) {
-			_accel_scale[j][i] = 1.0f;
-			_gyro_scale[j][i] = 1.0f;
-			_baro_scale[j] = 1.0f;
-		}
+		_corrections.gyro_scale_0[i] = 1.0f;
+		_corrections.accel_scale_0[i] = 1.0f;
+		_corrections.gyro_scale_1[i] = 1.0f;
+		_corrections.accel_scale_1[i] = 1.0f;
+		_corrections.gyro_scale_2[i] = 1.0f;
+		_corrections.accel_scale_2[i] = 1.0f;
 	}
 
-	_corrections.baro_scale = 1.0f;
-
-	memset(&_accel_offset, 0, sizeof(_accel_offset));
-	memset(&_gyro_offset, 0, sizeof(_gyro_offset));
-	memset(&_baro_offset, 0, sizeof(_baro_offset));
+	_corrections.baro_scale_0 = 1.0f;
+	_corrections.baro_scale_1 = 1.0f;
+	_corrections.baro_scale_2 = 1.0f;
 
 	_baro.voter.set_timeout(300000);
 	_mag.voter.set_timeout(300000);
@@ -155,9 +151,16 @@ void VotedSensorsUpdate::parameters_update()
 			struct gyro_report report;
 
 			if (orb_copy(ORB_ID(sensor_gyro), _gyro.subscription[topic_instance], &report) == 0) {
-				if (_temperature_compensation.set_sensor_id_gyro(report.device_id, topic_instance) < 0) {
+				int temp = _temperature_compensation.set_sensor_id_gyro(report.device_id, topic_instance);
+
+				if (temp < 0) {
 					PX4_ERR("gyro temp compensation init: failed to find device ID %u for instance %i",
 						report.device_id, topic_instance);
+					_corrections.gyro_mapping[topic_instance] =  0;
+
+				} else {
+					_corrections.gyro_mapping[topic_instance] =  temp;
+
 				}
 			}
 		}
@@ -168,9 +171,16 @@ void VotedSensorsUpdate::parameters_update()
 			struct accel_report report;
 
 			if (orb_copy(ORB_ID(sensor_accel), _accel.subscription[topic_instance], &report) == 0) {
-				if (_temperature_compensation.set_sensor_id_accel(report.device_id, topic_instance) < 0) {
+				int temp = _temperature_compensation.set_sensor_id_accel(report.device_id, topic_instance);
+
+				if (temp < 0) {
 					PX4_ERR("accel temp compensation init: failed to find device ID %u for instance %i",
 						report.device_id, topic_instance);
+					_corrections.accel_mapping[topic_instance] =  0;
+
+				} else {
+					_corrections.accel_mapping[topic_instance] =  temp;
+
 				}
 			}
 		}
@@ -181,9 +191,16 @@ void VotedSensorsUpdate::parameters_update()
 			struct baro_report report;
 
 			if (orb_copy(ORB_ID(sensor_baro), _baro.subscription[topic_instance], &report) == 0) {
-				if (_temperature_compensation.set_sensor_id_baro(report.device_id, topic_instance) < 0) {
+				int temp = _temperature_compensation.set_sensor_id_baro(report.device_id, topic_instance);
+
+				if (temp < 0) {
 					PX4_ERR("baro temp compensation init: failed to find device ID %u for instance %i",
 						report.device_id, topic_instance);
+					_corrections.baro_mapping[topic_instance] =  0;
+
+				} else {
+					_corrections.baro_mapping[topic_instance] =  temp;
+
 				}
 			}
 		}
@@ -196,6 +213,8 @@ void VotedSensorsUpdate::parameters_update()
 	unsigned mag_count = 0;
 	unsigned gyro_count = 0;
 	unsigned accel_count = 0;
+	unsigned gyro_cal_found_count = 0;
+	unsigned accel_cal_found_count = 0;
 
 	/* run through all gyro sensors */
 	for (unsigned s = 0; s < SENSOR_COUNT_MAX; s++) {
@@ -224,6 +243,10 @@ void VotedSensorsUpdate::parameters_update()
 			if (failed) {
 				DevMgr::releaseHandle(h);
 				continue;
+			}
+
+			if (s == 0 && device_id > 0) {
+				gyro_cal_found_count++;
 			}
 
 			/* if the calibration is for this device, apply it */
@@ -263,6 +286,19 @@ void VotedSensorsUpdate::parameters_update()
 		}
 	}
 
+	// There are less gyros than calibrations
+	// reset the board calibration and fail the initial load
+	if (gyro_count < gyro_cal_found_count) {
+
+		// run through all stored calibrations and reset them
+		for (unsigned i = 0; i < SENSOR_COUNT_MAX; i++) {
+
+			int device_id = 0;
+			(void)sprintf(str, "CAL_GYRO%u_ID", i);
+			(void)param_set(param_find(str), &device_id);
+		}
+	}
+
 	/* run through all accel sensors */
 	for (unsigned s = 0; s < SENSOR_COUNT_MAX; s++) {
 
@@ -290,6 +326,10 @@ void VotedSensorsUpdate::parameters_update()
 			if (failed) {
 				DevMgr::releaseHandle(h);
 				continue;
+			}
+
+			if (s == 0 && device_id > 0) {
+				accel_cal_found_count++;
 			}
 
 			/* if the calibration is for this device, apply it */
@@ -326,6 +366,19 @@ void VotedSensorsUpdate::parameters_update()
 
 		if (config_ok) {
 			accel_count++;
+		}
+	}
+
+	// There are less accels than calibrations
+	// reset the board calibration and fail the initial load
+	if (accel_count < accel_cal_found_count) {
+
+		// run through all stored calibrations and reset them
+		for (unsigned i = 0; i < SENSOR_COUNT_MAX; i++) {
+
+			int device_id = 0;
+			(void)sprintf(str, "CAL_ACC%u_ID", i);
+			(void)param_set(param_find(str), &device_id);
 		}
 	}
 
@@ -468,6 +521,9 @@ void VotedSensorsUpdate::parameters_update()
 
 void VotedSensorsUpdate::accel_poll(struct sensor_combined_s &raw)
 {
+	float *offsets[] = {_corrections.accel_offset_0, _corrections.accel_offset_1, _corrections.accel_offset_2 };
+	float *scales[] = {_corrections.accel_scale_0, _corrections.accel_scale_1, _corrections.accel_scale_2 };
+
 	for (unsigned uorb_index = 0; uorb_index < _accel.subscription_count; uorb_index++) {
 		bool accel_updated;
 		orb_check(_accel.subscription[uorb_index], &accel_updated);
@@ -500,7 +556,7 @@ void VotedSensorsUpdate::accel_poll(struct sensor_combined_s &raw)
 
 				// convert the delta velocities to an equivalent acceleration before application of corrections
 				float dt_inv = 1.e6f / accel_report.integral_dt;
-				accel_data = math::Vector<3>(accel_report.x_integral * dt_inv , accel_report.y_integral * dt_inv ,
+				accel_data = math::Vector<3>(accel_report.x_integral * dt_inv, accel_report.y_integral * dt_inv,
 							     accel_report.z_integral * dt_inv);
 
 				_last_sensor_data[uorb_index].accelerometer_integral_dt = accel_report.integral_dt / 1.e6f;
@@ -510,7 +566,7 @@ void VotedSensorsUpdate::accel_poll(struct sensor_combined_s &raw)
 
 				// Correct each sensor for temperature effects
 				// Filtering and/or downsampling of temperature should be performed in the driver layer
-				accel_data = math::Vector<3>(accel_report.x , accel_report.y , accel_report.z);
+				accel_data = math::Vector<3>(accel_report.x, accel_report.y, accel_report.z);
 
 				// handle the cse where this is our first output
 				if (_last_accel_timestamp[uorb_index] == 0) {
@@ -524,7 +580,7 @@ void VotedSensorsUpdate::accel_poll(struct sensor_combined_s &raw)
 
 			// handle temperature compensation
 			if (_temperature_compensation.apply_corrections_accel(uorb_index, accel_data, accel_report.temperature,
-					_accel_offset[uorb_index], _accel_scale[uorb_index]) == 2) {
+					offsets[uorb_index], scales[uorb_index]) == 2) {
 				_corrections_changed = true;
 			}
 
@@ -557,14 +613,15 @@ void VotedSensorsUpdate::accel_poll(struct sensor_combined_s &raw)
 
 		for (unsigned axis_index = 0; axis_index < 3; axis_index++) {
 			raw.accelerometer_m_s2[axis_index] = _last_sensor_data[best_index].accelerometer_m_s2[axis_index];
-			_corrections.accel_offset[axis_index] = _accel_offset[best_index][axis_index];
-			_corrections.accel_scale[axis_index] = _accel_scale[best_index][axis_index];
 		}
 	}
 }
 
 void VotedSensorsUpdate::gyro_poll(struct sensor_combined_s &raw)
 {
+	float *offsets[] = {_corrections.gyro_offset_0, _corrections.gyro_offset_1, _corrections.gyro_offset_2 };
+	float *scales[] = {_corrections.gyro_scale_0, _corrections.gyro_scale_1, _corrections.gyro_scale_2 };
+
 	for (unsigned uorb_index = 0; uorb_index < _gyro.subscription_count; uorb_index++) {
 		bool gyro_updated;
 		orb_check(_gyro.subscription[uorb_index], &gyro_updated);
@@ -597,7 +654,7 @@ void VotedSensorsUpdate::gyro_poll(struct sensor_combined_s &raw)
 
 				// convert the delta angles to an equivalent angular rate before application of corrections
 				float dt_inv = 1.e6f / gyro_report.integral_dt;
-				gyro_rate = math::Vector<3>(gyro_report.x_integral * dt_inv , gyro_report.y_integral * dt_inv ,
+				gyro_rate = math::Vector<3>(gyro_report.x_integral * dt_inv, gyro_report.y_integral * dt_inv,
 							    gyro_report.z_integral * dt_inv);
 
 				_last_sensor_data[uorb_index].gyro_integral_dt = gyro_report.integral_dt / 1.e6f;
@@ -621,7 +678,7 @@ void VotedSensorsUpdate::gyro_poll(struct sensor_combined_s &raw)
 
 			// handle temperature compensation
 			if (_temperature_compensation.apply_corrections_gyro(uorb_index, gyro_rate, gyro_report.temperature,
-					_gyro_offset[uorb_index], _gyro_scale[uorb_index]) == 2) {
+					offsets[uorb_index], scales[uorb_index]) == 2) {
 				_corrections_changed = true;
 			}
 
@@ -655,8 +712,6 @@ void VotedSensorsUpdate::gyro_poll(struct sensor_combined_s &raw)
 
 		for (unsigned axis_index = 0; axis_index < 3; axis_index++) {
 			raw.gyro_rad[axis_index] = _last_sensor_data[best_index].gyro_rad[axis_index];
-			_corrections.gyro_offset[axis_index] = _gyro_offset[best_index][axis_index];
-			_corrections.gyro_scale[axis_index] = _gyro_scale[best_index][axis_index];
 		}
 	}
 }
@@ -710,6 +765,8 @@ void VotedSensorsUpdate::mag_poll(struct sensor_combined_s &raw)
 void VotedSensorsUpdate::baro_poll(struct sensor_combined_s &raw)
 {
 	bool got_update = false;
+	float *offsets[] = {&_corrections.baro_offset_0, &_corrections.baro_offset_1, &_corrections.baro_offset_2 };
+	float *scales[] = {&_corrections.baro_scale_0, &_corrections.baro_scale_1, &_corrections.baro_scale_2 };
 
 	for (unsigned uorb_index = 0; uorb_index < _baro.subscription_count; uorb_index++) {
 		bool baro_updated;
@@ -729,7 +786,7 @@ void VotedSensorsUpdate::baro_poll(struct sensor_combined_s &raw)
 
 			// handle temperature compensation
 			if (_temperature_compensation.apply_corrections_baro(uorb_index, corrected_pressure, baro_report.temperature,
-					&_baro_offset[uorb_index], &_baro_scale[uorb_index]) == 2) {
+					offsets[uorb_index], scales[uorb_index]) == 2) {
 				_corrections_changed = true;
 			}
 
@@ -766,9 +823,6 @@ void VotedSensorsUpdate::baro_poll(struct sensor_combined_s &raw)
 				_corrections.selected_baro_instance = (uint8_t)best_index;
 				_corrections_changed = true;
 			}
-
-			_corrections.baro_offset = _baro_offset[best_index];
-			_corrections.baro_scale = _baro_scale[best_index];
 
 			/* altitude calculations based on http://www.kansasflyer.org/index.asp?nav=Avi&sec=Alti&tab=Theory&pg=1 */
 
@@ -818,8 +872,12 @@ bool VotedSensorsUpdate::check_failover(SensorData &sensor, const char *sensor_n
 		uint32_t flags = sensor.voter.failover_state();
 
 		if (flags == DataValidator::ERROR_FLAG_NO_ERROR) {
-			//we switched due to a non-critical reason. No need to panic.
-			PX4_INFO("%s sensor switch from #%i", sensor_name, sensor.voter.failover_index());
+			int failover_index = sensor.voter.failover_index();
+
+			if (failover_index != -1) {
+				//we switched due to a non-critical reason. No need to panic.
+				PX4_INFO("%s sensor switch from #%i", sensor_name, failover_index);
+			}
 
 		} else {
 			mavlink_log_emergency(&_mavlink_log_pub, "%s #%i fail: %s%s%s%s%s!",
