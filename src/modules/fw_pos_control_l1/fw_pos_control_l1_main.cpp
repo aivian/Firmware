@@ -2339,21 +2339,21 @@ FixedwingPositionControl::task_main()
 					_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max_rad, _parameters.man_pitch_max_rad);
 				}
 
-                if (!(_control_mode.flag_control_offboard_enabled &&
-                      !(_control_mode.flag_control_position_enabled ||
-                    _control_mode.flag_control_velocity_enabled ||
-                    _control_mode.flag_control_acceleration_enabled))) {
+				if (!_control_mode.flag_control_offboard_enabled ||
+				    _control_mode.flag_control_position_enabled ||
+				    _control_mode.flag_control_velocity_enabled ||
+				    _control_mode.flag_control_acceleration_enabled) {
 
-                    /* lazily publish the setpoint only once available */
-                    if (_attitude_sp_pub != nullptr) {
-                        /* publish the attitude setpoint */
-                        orb_publish(_attitude_setpoint_id, _attitude_sp_pub, &_att_sp);
+					/* lazily publish the setpoint only once available */
+					if (_attitude_sp_pub != nullptr) {
+						/* publish the attitude setpoint */
+						orb_publish(_attitude_setpoint_id, _attitude_sp_pub, &_att_sp);
 
-                    } else if (_attitude_setpoint_id) {
-                        /* advertise and publish */
-                        _attitude_sp_pub = orb_advertise(_attitude_setpoint_id, &_att_sp);
-                    }
-                }
+					} else if (_attitude_setpoint_id) {
+						/* advertise and publish */
+						_attitude_sp_pub = orb_advertise(_attitude_setpoint_id, &_att_sp);
+					}
+				}
 
 				/* XXX check if radius makes sense here */
 				float turn_distance = _l1_control.switch_distance(100.0f);
