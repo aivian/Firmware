@@ -405,11 +405,17 @@ then
 		gps start
 	fi
 
+	set DATAMAN_OPT ""
+	if ver hwcmp AEROFC_V1
+	then
+		set DATAMAN_OPT -r
+	fi
 	# waypoint storage
 	# REBOOTWORK this needs to start in parallel
-	if dataman start
+	if dataman start $DATAMAN_OPT
 	then
 	fi
+	unset DATAMAN_OPT
 
 	#
 	# Sensors System (start before Commander so Preflight checks are properly run)
@@ -640,6 +646,10 @@ then
 		if param compare SYS_COMPANION 57600
 		then
 			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 57600 -m onboard -r 5000 -x
+		fi
+		if param compare SYS_COMPANION 460800
+		then
+			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 460800 -m onboard -r 5000 -x
 		fi
 		if param compare SYS_COMPANION 157600
 		then

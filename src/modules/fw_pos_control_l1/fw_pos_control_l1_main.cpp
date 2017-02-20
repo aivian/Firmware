@@ -2372,8 +2372,7 @@ FixedwingPositionControl::task_main()
 				_att_sp.q_d[3] = q(3);
 				_att_sp.q_d_valid = true;
 
-                //Need to allow command through if we're in body rate mode since I'm hijacking that...
-				if (!(_control_mode.flag_control_offboard_enabled && _offboard_control_mode.ignore_bodyrate) ||
+				if (!_control_mode.flag_control_offboard_enabled ||
 				    _control_mode.flag_control_position_enabled ||
 				    _control_mode.flag_control_velocity_enabled ||
 				    _control_mode.flag_control_acceleration_enabled) {
