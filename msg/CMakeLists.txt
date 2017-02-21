@@ -117,6 +117,7 @@ set(msg_file_names
 	vehicle_global_position.msg
 	vehicle_global_velocity_setpoint.msg
 	vehicle_gps_position.msg
+    vehicle_fw_avia_setpoint.msg
 	vehicle_land_detected.msg
 	vehicle_local_position.msg
 	vehicle_local_position_setpoint.msg
@@ -124,7 +125,6 @@ set(msg_file_names
 	vehicle_roi.msg
 	vehicle_status.msg
 	vehicle_status_flags.msg
-	vision_position_estimate.msg
 	vtol_vehicle_status.msg
 	wind_estimate.msg
 	)

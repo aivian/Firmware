@@ -95,8 +95,10 @@
 #include <uORB/topics/sensor_combined.h>
 #include <uORB/topics/tecs_status.h>
 #include <uORB/topics/vehicle_attitude_setpoint.h>
+#include <uORB/topics/vehicle_fw_avia_setpoint.h>
 #include <uORB/topics/vehicle_command.h>
 #include <uORB/topics/vehicle_control_mode.h>
+#include <uORB/topics/offboard_control_mode.h>
 #include <uORB/topics/vehicle_global_position.h>
 #include <uORB/topics/vehicle_land_detected.h>
 #include <uORB/topics/vehicle_status.h>
@@ -114,6 +116,9 @@ static int	_control_task = -1;			/**< task handle for sensor task */
 #define THROTTLE_THRESH 0.05f 	///< max throttle from user which will not lead to motors spinning up in altitude controlled modes
 #define MANUAL_THROTTLE_CLIMBOUT_THRESH 0.85f	///< a throttle / pitch input above this value leads to the system switching to climbout mode
 #define ALTHOLD_EPV_RESET_THRESH 5.0f
+
+using matrix::Eulerf;
+using matrix::Quatf;
 
 /**
  * L1 control app start / stop handling function
@@ -165,7 +170,9 @@ private:
 	int		_pos_sp_triplet_sub;
 	int		_ctrl_state_sub;			/**< control state subscription */
 	int		_control_mode_sub;		/**< control mode subscription */
+	int		_offboard_control_mode_sub;		/**< control mode subscription */
 	int		_vehicle_command_sub;		/**< vehicle command subscription */
+	int		_vehicle_fw_avia_sub;		/**< vehicle command subscription */
 	int		_vehicle_status_sub;		/**< vehicle status subscription */
 	int		_vehicle_land_detected_sub;	/**< vehicle land detected subscription */
 	int		_params_sub;			/**< notification of parameter updates */
@@ -180,9 +187,11 @@ private:
 
 	struct control_state_s				_ctrl_state;			/**< control state */
 	struct vehicle_attitude_setpoint_s		_att_sp;			/**< vehicle attitude setpoint */
+	struct vehicle_fw_avia_setpoint_s		_avia_sp;			/**< vehicle attitude setpoint */
 	struct fw_pos_ctrl_status_s		_fw_pos_ctrl_status;		/**< navigation capabilities */
 	struct manual_control_setpoint_s		_manual;			/**< r/c channel data */
 	struct vehicle_control_mode_s			_control_mode;			/**< control mode */
+	struct offboard_control_mode_s			_offboard_control_mode; /**< offboard control mode */
 	struct vehicle_command_s			_vehicle_command;		/**< vehicle commands */
 	struct vehicle_status_s				_vehicle_status;		/**< vehicle status */
 	struct vehicle_land_detected_s			_vehicle_land_detected;		/**< vehicle land detected */
@@ -544,7 +553,9 @@ FixedwingPositionControl::FixedwingPositionControl() :
 	_pos_sp_triplet_sub(-1),
 	_ctrl_state_sub(-1),
 	_control_mode_sub(-1),
+	_offboard_control_mode_sub(-1),
 	_vehicle_command_sub(-1),
+	_vehicle_fw_avia_sub(-1),
 	_vehicle_status_sub(-1),
 	_vehicle_land_detected_sub(-1),
 	_params_sub(-1),
@@ -562,9 +573,11 @@ FixedwingPositionControl::FixedwingPositionControl() :
 	/* states */
 	_ctrl_state(),
 	_att_sp(),
+    _avia_sp(),
 	_fw_pos_ctrl_status(),
 	_manual(),
 	_control_mode(),
+	_offboard_control_mode(),
 	_vehicle_command(),
 	_vehicle_status(),
 	_vehicle_land_detected(),
@@ -837,11 +850,16 @@ void
 FixedwingPositionControl::vehicle_control_mode_poll()
 {
 	bool updated;
+    bool offboard_updated;
 
 	orb_check(_control_mode_sub, &updated);
+	orb_check(_offboard_control_mode_sub, &offboard_updated);
 
 	if (updated) {
 		orb_copy(ORB_ID(vehicle_control_mode), _control_mode_sub, &_control_mode);
+	}
+	if (offboard_updated) {
+		orb_copy(ORB_ID(offboard_control_mode), _offboard_control_mode_sub, &_offboard_control_mode);
 	}
 }
 
@@ -849,12 +867,17 @@ void
 FixedwingPositionControl::vehicle_command_poll()
 {
 	bool updated;
+    bool avia_updated;
 
 	orb_check(_vehicle_command_sub, &updated);
+	orb_check(_vehicle_fw_avia_sub, &avia_updated);
 
 	if (updated) {
 		orb_copy(ORB_ID(vehicle_command), _vehicle_command_sub, &_vehicle_command);
 		handle_command();
+	}
+	if (avia_updated) {
+		orb_copy(ORB_ID(vehicle_fw_avia_setpoint), _vehicle_fw_avia_sub, &_avia_sp);
 	}
 }
 
@@ -1027,6 +1050,7 @@ FixedwingPositionControl::calculate_target_airspeed(float airspeed_demand)
 
 	/* sanity check: limit to range */
 	target_airspeed = math::constrain(target_airspeed, _parameters.airspeed_min, _parameters.airspeed_max);
+	target_airspeed = target_airspeed;
 
 	/* plain airspeed error */
 	_airspeed_error = target_airspeed - airspeed;
@@ -1300,7 +1324,8 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 	bool in_air_alt_control = (!_vehicle_land_detected.landed &&
 				   (_control_mode.flag_control_auto_enabled ||
 				    _control_mode.flag_control_velocity_enabled ||
-				    _control_mode.flag_control_altitude_enabled));
+				    _control_mode.flag_control_altitude_enabled ||
+                   (_control_mode.flag_control_offboard_enabled && _avia_sp.enabled)));
 
 	/* update TECS filters */
 	_tecs.update_state(_global_pos.alt, _ctrl_state.airspeed, _R_nb,
@@ -1506,32 +1531,27 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 
 			// we want the plane to keep tracking the desired flight path until we start flaring
 			// if we go into heading hold mode earlier then we risk to be pushed away from the runway by cross winds
-			//if (land_noreturn_vertical) {
-			if (wp_distance < _parameters.land_heading_hold_horizontal_distance || _land_noreturn_horizontal) {
+			if (!_land_noreturn_horizontal &&
+			    ((wp_distance < _parameters.land_heading_hold_horizontal_distance) || _land_noreturn_vertical)) {
 
-				/* heading hold, along the line connecting this and the last waypoint */
+				if (pos_sp_triplet.previous.valid) {
+					/* heading hold, along the line connecting this and the last waypoint */
+					_target_bearing = bearing_lastwp_currwp;
 
-				if (!_land_noreturn_horizontal) {
-					// set target_bearing in first occurrence
-					if (pos_sp_triplet.previous.valid) {
-						_target_bearing = bearing_lastwp_currwp;
-
-					} else {
-						_target_bearing = _yaw;
-					}
-
-					mavlink_log_info(&_mavlink_log_pub, "#Landing, heading hold");
+				} else {
+					_target_bearing = _yaw;
 				}
 
-//					warnx("NORET: %d, target_bearing: %d, yaw: %d", (int)land_noreturn_horizontal, (int)math::degrees(target_bearing), (int)math::degrees(_yaw));
+				_land_noreturn_horizontal = true;
+				mavlink_log_info(&_mavlink_log_pub, "#Landing, heading hold");
+			}
 
+			if (_land_noreturn_horizontal) {
+				// heading hold
 				_l1_control.navigate_heading(_target_bearing, _yaw, nav_speed_2d);
 
-				_land_noreturn_horizontal = true;
-
 			} else {
-
-				/* normal navigation */
+				// normal navigation
 				_l1_control.navigate_waypoints(prev_wp, curr_wp, current_position, nav_speed_2d);
 			}
 
@@ -1619,8 +1639,10 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 				throttle_max = _parameters.throttle_max;
 
 				/* enable direct yaw control using rudder/wheel */
-				_att_sp.yaw_body = _target_bearing;
-				_att_sp.fw_control_yaw = true;
+				if (_land_noreturn_horizontal) {
+					_att_sp.yaw_body = _target_bearing;
+					_att_sp.fw_control_yaw = true;
+				}
 
 				if (_global_pos.alt < terrain_alt + _landingslope.motor_lim_relative_alt() || _land_motor_lim) {
 					throttle_max = math::min(throttle_max, _parameters.throttle_land_max);
@@ -2069,7 +2091,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 		_att_sp.roll_body = _manual.y * _parameters.man_roll_max_rad;
 		_att_sp.yaw_body = 0;
 
-	} else {
+    } else {
 		_control_mode_current = FW_POSCTRL_MODE_OTHER;
 
 		/* do not publish the setpoint */
@@ -2085,6 +2107,20 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 		}
 	}
 
+    if (_control_mode.flag_control_offboard_enabled && _avia_sp.enabled) {
+        setpoint = true;
+
+        float mission_airspeed = _avia_sp.v_ias;
+		float mission_throttle = _parameters.throttle_cruise;
+        if (!_offboard_control_mode.ignore_thrust) {
+            mission_throttle = _avia_sp.throttle;
+        }
+        tecs_update_pitch_throttle(pos_sp_triplet.current.alt, calculate_target_airspeed(mission_airspeed), eas2tas,
+                       math::radians(_parameters.pitch_limit_min), math::radians(_parameters.pitch_limit_max),
+                       _parameters.throttle_min, _parameters.throttle_max, mission_throttle,
+                       false, math::radians(_parameters.pitch_limit_min), _global_pos.alt, ground_speed);
+    }
+    
 	/* Copy thrust output for publication */
 	if (_vehicle_status.engine_failure || _vehicle_status.engine_failure_cmd) {
 		/* Set thrust to 0 to minimize damage */
@@ -2141,6 +2177,8 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 
 	// manual attitude control
 	use_tecs_pitch &= !(_control_mode_current == FW_POSCTRL_MODE_OTHER);
+
+    use_tecs_pitch |= (_avia_sp.enabled && _control_mode.flag_control_offboard_enabled);
 
 	if (use_tecs_pitch) {
 		_att_sp.pitch_body = get_tecs_pitch();
@@ -2213,6 +2251,7 @@ FixedwingPositionControl::task_main()
 	_sensor_combined_sub = orb_subscribe(ORB_ID(sensor_combined));
 	_control_mode_sub = orb_subscribe(ORB_ID(vehicle_control_mode));
 	_vehicle_command_sub = orb_subscribe(ORB_ID(vehicle_command));
+	_vehicle_fw_avia_sub = orb_subscribe(ORB_ID(vehicle_fw_avia_setpoint));
 	_vehicle_status_sub = orb_subscribe(ORB_ID(vehicle_status));
 	_vehicle_land_detected_sub = orb_subscribe(ORB_ID(vehicle_land_detected));
 	_params_sub = orb_subscribe(ORB_ID(parameter_update));
@@ -2339,7 +2378,14 @@ FixedwingPositionControl::task_main()
 					_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max_rad, _parameters.man_pitch_max_rad);
 				}
 
-				if (!_control_mode.flag_control_offboard_enabled ||
+				Quatf q(Eulerf(_att_sp.roll_body, _att_sp.pitch_body, _att_sp.yaw_body));
+				_att_sp.q_d[0] = q(0);
+				_att_sp.q_d[1] = q(1);
+				_att_sp.q_d[2] = q(2);
+				_att_sp.q_d[3] = q(3);
+				_att_sp.q_d_valid = true;
+
+				if ((_control_mode.flag_control_offboard_enabled && _avia_sp.enabled) ||
 				    _control_mode.flag_control_position_enabled ||
 				    _control_mode.flag_control_velocity_enabled ||
 				    _control_mode.flag_control_acceleration_enabled) {
