@@ -90,6 +90,7 @@ int initialize_parameter_handles(ParameterHandles &parameter_handles)
 	parameter_handles.rc_map_acro_sw = param_find("RC_MAP_ACRO_SW");
 	parameter_handles.rc_map_offboard_sw = param_find("RC_MAP_OFFB_SW");
 	parameter_handles.rc_map_kill_sw = param_find("RC_MAP_KILL_SW");
+	parameter_handles.rc_map_arm_sw = param_find("RC_MAP_ARM_SW");
 	parameter_handles.rc_map_trans_sw = param_find("RC_MAP_TRANS_SW");
 	parameter_handles.rc_map_gear_sw = param_find("RC_MAP_GEAR_SW");
 
@@ -120,8 +121,13 @@ int initialize_parameter_handles(ParameterHandles &parameter_handles)
 	parameter_handles.rc_acro_th = param_find("RC_ACRO_TH");
 	parameter_handles.rc_offboard_th = param_find("RC_OFFB_TH");
 	parameter_handles.rc_killswitch_th = param_find("RC_KILLSWITCH_TH");
+	parameter_handles.rc_armswitch_th = param_find("RC_ARMSWITCH_TH");
 	parameter_handles.rc_trans_th = param_find("RC_TRANS_TH");
 	parameter_handles.rc_gear_th = param_find("RC_GEAR_TH");
+
+	/* RC low pass filter configuration */
+	parameter_handles.rc_flt_smp_rate = param_find("RC_FLT_SMP_RATE");
+	parameter_handles.rc_flt_cutoff = param_find("RC_FLT_CUTOFF");
 
 	/* Differential pressure offset */
 	parameter_handles.diff_pres_offset_pa = param_find("SENS_DPRES_OFF");
@@ -313,6 +319,10 @@ int update_parameters(const ParameterHandles &parameter_handles, Parameters &par
 		PX4_WARN("%s", paramerr);
 	}
 
+	if (param_get(parameter_handles.rc_map_arm_sw, &(parameters.rc_map_arm_sw)) != OK) {
+		PX4_WARN("%s", paramerr);
+	}
+
 	if (param_get(parameter_handles.rc_map_trans_sw, &(parameters.rc_map_trans_sw)) != OK) {
 		PX4_WARN("%s", paramerr);
 	}
@@ -365,12 +375,21 @@ int update_parameters(const ParameterHandles &parameter_handles, Parameters &par
 	param_get(parameter_handles.rc_killswitch_th, &(parameters.rc_killswitch_th));
 	parameters.rc_killswitch_inv = (parameters.rc_killswitch_th < 0);
 	parameters.rc_killswitch_th = fabs(parameters.rc_killswitch_th);
+	param_get(parameter_handles.rc_armswitch_th, &(parameters.rc_armswitch_th));
+	parameters.rc_armswitch_inv = (parameters.rc_armswitch_th < 0);
+	parameters.rc_armswitch_th = fabs(parameters.rc_armswitch_th);
 	param_get(parameter_handles.rc_trans_th, &(parameters.rc_trans_th));
 	parameters.rc_trans_inv = (parameters.rc_trans_th < 0);
 	parameters.rc_trans_th = fabs(parameters.rc_trans_th);
 	param_get(parameter_handles.rc_gear_th, &(parameters.rc_gear_th));
 	parameters.rc_gear_inv = (parameters.rc_gear_th < 0);
 	parameters.rc_gear_th = fabs(parameters.rc_gear_th);
+
+	param_get(parameter_handles.rc_flt_smp_rate, &(parameters.rc_flt_smp_rate));
+	parameters.rc_flt_smp_rate = math::max(1.0f, parameters.rc_flt_smp_rate);
+	param_get(parameter_handles.rc_flt_cutoff, &(parameters.rc_flt_cutoff));
+	/* make sure the filter is in its stable region -> fc < fs/2 */
+	parameters.rc_flt_cutoff = math::constrain(parameters.rc_flt_cutoff, 0.1f, (parameters.rc_flt_smp_rate / 2) - 1.f);
 
 	/* Airspeed offset */
 	param_get(parameter_handles.diff_pres_offset_pa, &(parameters.diff_pres_offset_pa));
@@ -407,22 +426,8 @@ int update_parameters(const ParameterHandles &parameter_handles, Parameters &par
 
 	} else if (parameters.battery_v_div <= 0.0f) {
 		/* apply scaling according to defaults if set to default */
-#if defined (CONFIG_ARCH_BOARD_PX4FMU_V4)
-		parameters.battery_v_div = 13.653333333f;
-#elif defined (CONFIG_ARCH_BOARD_PX4FMU_V2) || defined ( CONFIG_ARCH_BOARD_MINDPX_V2 )
-		parameters.battery_v_div = 10.177939394f;
-#elif defined (CONFIG_ARCH_BOARD_AEROCORE)
-		parameters.battery_v_div = 7.8196363636f;
-#elif defined (CONFIG_ARCH_BOARD_PX4FMU_V1)
-		parameters.battery_v_div = 5.7013919372f;
-#elif defined (CONFIG_ARCH_BOARD_SITL)
-		parameters.battery_v_div = 10.177939394f;
-#elif defined (CONFIG_ARCH_BOARD_TAP_V1)
-		parameters.battery_v_div = 9.0f;
-#else
-		/* ensure a missing default trips a low voltage lockdown */
-		parameters.battery_v_div = 0.0f;
-#endif
+
+		parameters.battery_v_div = BOARD_BATTERY1_V_DIV;
 		param_set(parameter_handles.battery_v_div, &parameters.battery_v_div);
 	}
 
@@ -432,18 +437,8 @@ int update_parameters(const ParameterHandles &parameter_handles, Parameters &par
 
 	} else if (parameters.battery_a_per_v <= 0.0f) {
 		/* apply scaling according to defaults if set to default */
-#if defined (CONFIG_ARCH_BOARD_PX4FMU_V4)
-		/* current scaling for ACSP4 */
-		parameters.battery_a_per_v = 36.367515152f;
-#elif defined (CONFIG_ARCH_BOARD_PX4FMU_V2) || defined (CONFIG_ARCH_BOARD_MINDPX_V2) || defined (CONFIG_ARCH_BOARD_AEROCORE) || defined (CONFIG_ARCH_BOARD_PX4FMU_V1)
-		/* current scaling for 3DR power brick */
-		parameters.battery_a_per_v = 15.391030303f;
-#elif defined (CONFIG_ARCH_BOARD_SITL)
-		parameters.battery_a_per_v = 15.391030303f;
-#else
-		/* ensure a missing default leads to an unrealistic current value */
-		parameters.battery_a_per_v = 0.0f;
-#endif
+
+		parameters.battery_a_per_v = BOARD_BATTERY1_A_PER_V;
 		param_set(parameter_handles.battery_a_per_v, &parameters.battery_a_per_v);
 	}
 

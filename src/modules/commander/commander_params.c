@@ -280,6 +280,20 @@ PARAM_DEFINE_INT32(COM_DISARM_LAND, 0);
 PARAM_DEFINE_INT32(COM_ARM_WO_GPS, 1);
 
 /**
+ * Arm switch is only a button
+ *
+ * The default uses the arm switch as real switch.
+ * If parameter set button gets handled like stick arming.
+ *
+ * @group Commander
+ * @min 0
+ * @max 1
+ * @value 0 Arm switch is a switch that stays on when armed
+ * @value 1 Arm switch is a button that only triggers arming and disarming
+ */
+PARAM_DEFINE_INT32(COM_ARM_SWISBTN, 0);
+
+/**
  * Battery failsafe mode
  *
  * Action the system takes on low battery. Defaults to off
@@ -567,4 +581,4 @@ PARAM_DEFINE_FLOAT(COM_ARM_IMU_ACC, 0.7f);
  * @decimal 3
  * @increment 0.01
  */
-PARAM_DEFINE_FLOAT(COM_ARM_IMU_GYR, 0.09f);
+PARAM_DEFINE_FLOAT(COM_ARM_IMU_GYR, 0.15f);

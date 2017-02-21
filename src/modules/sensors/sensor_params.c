@@ -786,8 +786,9 @@ PARAM_DEFINE_INT32(SENS_BOARD_ROT, 0);
 /**
  * PX4Flow board rotation
  *
- * This parameter defines the rotation of the PX4FLOW board relative to the platform.
- * Zero rotation is defined as Y on flow board pointing towards front of vehicle
+ * This parameter defines the yaw rotation of the PX4FLOW board relative to the vehicle body frame.
+ * Zero rotation is defined as X on flow board pointing towards front of vehicle.
+ * The recommneded installation default for the PX4FLOW board is with the Y axis forward (270 deg yaw).
  *
  * @value 0 No rotation
  * @value 1 Yaw 45°
@@ -802,7 +803,7 @@ PARAM_DEFINE_INT32(SENS_BOARD_ROT, 0);
  *
  * @group Sensor Calibration
  */
-PARAM_DEFINE_INT32(SENS_FLOW_ROT, 0);
+PARAM_DEFINE_INT32(SENS_FLOW_ROT, 6);
 
 /**
  * Board rotation Y (Pitch) offset
@@ -2489,6 +2490,34 @@ PARAM_DEFINE_INT32(RC_MAP_OFFB_SW, 0);
 PARAM_DEFINE_INT32(RC_MAP_KILL_SW, 0);
 
 /**
+ * Arm switch channel
+ *
+ * @min 0
+ * @max 18
+ * @group Radio Switches
+ * @value 0 Unassigned
+ * @value 1 Channel 1
+ * @value 2 Channel 2
+ * @value 3 Channel 3
+ * @value 4 Channel 4
+ * @value 5 Channel 5
+ * @value 6 Channel 6
+ * @value 7 Channel 7
+ * @value 8 Channel 8
+ * @value 9 Channel 9
+ * @value 10 Channel 10
+ * @value 11 Channel 11
+ * @value 12 Channel 12
+ * @value 13 Channel 13
+ * @value 14 Channel 14
+ * @value 15 Channel 15
+ * @value 16 Channel 16
+ * @value 17 Channel 17
+ * @value 18 Channel 18
+ */
+PARAM_DEFINE_INT32(RC_MAP_ARM_SW, 0);
+
+/**
  * Flaps channel
  *
  * @min 0
@@ -2986,6 +3015,24 @@ PARAM_DEFINE_FLOAT(RC_OFFB_TH, 0.5f);
 PARAM_DEFINE_FLOAT(RC_KILLSWITCH_TH, 0.25f);
 
 /**
+ * Threshold for the arm switch
+ *
+ * 0-1 indicate where in the full channel range the threshold sits
+ * 		0 : min
+ * 		1 : max
+ * sign indicates polarity of comparison
+ * 		positive : true when channel>th
+ * 		negative : true when channel<th
+ *
+ * @min -1
+ * @max 1
+ * @group Radio Switches
+ *
+ *
+ */
+PARAM_DEFINE_FLOAT(RC_ARMSWITCH_TH, 0.25f);
+
+/**
  * Threshold for the VTOL transition switch
  *
  * 0-1 indicate where in the full channel range the threshold sits
@@ -3150,11 +3197,10 @@ PARAM_DEFINE_INT32(SENS_EN_SF1XX, 0);
 PARAM_DEFINE_INT32(SENS_EN_THERMAL, -1);
 
 /**
- * Set the PWM output frequency for the MAIN outputs
+ * Set the PWM output frequency for the main outputs
  *
  * IMPORTANT: CHANGING THIS PARAMETER REQUIRES A COMPLETE SYSTEM
- * REBOOT IN ORDER TO APPLY THE CHANGES. COMPLETELY POWER-CYCLE
- * THE SYSTEM TO PUT CHANGES INTO EFFECT.
+ * REBOOT IN ORDER TO APPLY THE CHANGES.
  *
  * Set to 400 for industry default or 1000 for high frequency ESCs.
  *
@@ -3168,11 +3214,10 @@ PARAM_DEFINE_INT32(SENS_EN_THERMAL, -1);
 PARAM_DEFINE_INT32(PWM_RATE, 400);
 
 /**
- * Set the minimum PWM for the MAIN outputs
+ * Set the minimum PWM for the main outputs
  *
  * IMPORTANT: CHANGING THIS PARAMETER REQUIRES A COMPLETE SYSTEM
- * REBOOT IN ORDER TO APPLY THE CHANGES. COMPLETELY POWER-CYCLE
- * THE SYSTEM TO PUT CHANGES INTO EFFECT.
+ * REBOOT IN ORDER TO APPLY THE CHANGES.
  *
  * Set to 1000 for industry default or 900 to increase servo travel.
  *
@@ -3186,11 +3231,10 @@ PARAM_DEFINE_INT32(PWM_RATE, 400);
 PARAM_DEFINE_INT32(PWM_MIN, 1000);
 
 /**
- * Set the maximum PWM for the MAIN outputs
+ * Set the maximum PWM for the main outputs
  *
  * IMPORTANT: CHANGING THIS PARAMETER REQUIRES A COMPLETE SYSTEM
- * REBOOT IN ORDER TO APPLY THE CHANGES. COMPLETELY POWER-CYCLE
- * THE SYSTEM TO PUT CHANGES INTO EFFECT.
+ * REBOOT IN ORDER TO APPLY THE CHANGES.
  *
  * Set to 2000 for industry default or 2100 to increase servo travel.
  *
@@ -3204,11 +3248,10 @@ PARAM_DEFINE_INT32(PWM_MIN, 1000);
 PARAM_DEFINE_INT32(PWM_MAX, 2000);
 
 /**
- * Set the disarmed PWM for MAIN outputs
+ * Set the disarmed PWM for the main outputs
  *
  * IMPORTANT: CHANGING THIS PARAMETER REQUIRES A COMPLETE SYSTEM
- * REBOOT IN ORDER TO APPLY THE CHANGES. COMPLETELY POWER-CYCLE
- * THE SYSTEM TO PUT CHANGES INTO EFFECT.
+ * REBOOT IN ORDER TO APPLY THE CHANGES.
  *
  * This is the PWM pulse the autopilot is outputting if not armed.
  * The main use of this parameter is to silence ESCs when they are disarmed.
@@ -3223,11 +3266,10 @@ PARAM_DEFINE_INT32(PWM_MAX, 2000);
 PARAM_DEFINE_INT32(PWM_DISARMED, 900);
 
 /**
- * Set the minimum PWM for the MAIN outputs
+ * Set the minimum PWM for the auxiliary outputs
  *
  * IMPORTANT: CHANGING THIS PARAMETER REQUIRES A COMPLETE SYSTEM
- * REBOOT IN ORDER TO APPLY THE CHANGES. COMPLETELY POWER-CYCLE
- * THE SYSTEM TO PUT CHANGES INTO EFFECT.
+ * REBOOT IN ORDER TO APPLY THE CHANGES.
  *
  * Set to 1000 for default or 900 to increase servo travel
  *
@@ -3241,11 +3283,10 @@ PARAM_DEFINE_INT32(PWM_DISARMED, 900);
 PARAM_DEFINE_INT32(PWM_AUX_MIN, 1000);
 
 /**
- * Set the maximum PWM for the MAIN outputs
+ * Set the maximum PWM for the auxiliary outputs
  *
  * IMPORTANT: CHANGING THIS PARAMETER REQUIRES A COMPLETE SYSTEM
- * REBOOT IN ORDER TO APPLY THE CHANGES. COMPLETELY POWER-CYCLE
- * THE SYSTEM TO PUT CHANGES INTO EFFECT.
+ * REBOOT IN ORDER TO APPLY THE CHANGES.
  *
  * Set to 2000 for default or 2100 to increase servo travel
  *
@@ -3259,11 +3300,10 @@ PARAM_DEFINE_INT32(PWM_AUX_MIN, 1000);
 PARAM_DEFINE_INT32(PWM_AUX_MAX, 2000);
 
 /**
- * Set the disarmed PWM for AUX outputs
+ * Set the disarmed PWM for auxiliary outputs
  *
  * IMPORTANT: CHANGING THIS PARAMETER REQUIRES A COMPLETE SYSTEM
- * REBOOT IN ORDER TO APPLY THE CHANGES. COMPLETELY POWER-CYCLE
- * THE SYSTEM TO PUT CHANGES INTO EFFECT.
+ * REBOOT IN ORDER TO APPLY THE CHANGES.
  *
  * This is the PWM pulse the autopilot is outputting if not armed.
  * The main use of this parameter is to silence ESCs when they are disarmed.
@@ -3303,3 +3343,25 @@ PARAM_DEFINE_FLOAT(THR_MDL_FAC, 0.0f);
  * @group PWM Outputs
  */
 PARAM_DEFINE_FLOAT(MOT_SLEW_MAX, 0.0f);
+
+/**
+ * Sample rate of the remote control values for the low pass filter on roll,pitch, yaw and throttle
+ *
+ * Has an influence on the cutoff frequency precision.
+ *
+ * @min 1.0
+ * @unit Hz
+ * @group Radio Calibration
+ */
+PARAM_DEFINE_FLOAT(RC_FLT_SMP_RATE, 50.0f);
+
+/**
+ * Cutoff frequency for the low pass filter on roll,pitch, yaw and throttle
+ *
+ * Does not get set unless below RC_FLT_SMP_RATE/2 because of filter instability characteristics.
+ *
+ * @min 0.1
+ * @unit Hz
+ * @group Radio Calibration
+ */
+PARAM_DEFINE_FLOAT(RC_FLT_CUTOFF, 10.0f);

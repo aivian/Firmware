@@ -55,6 +55,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
+#include <float.h>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -556,7 +557,7 @@ FixedwingPositionControl::FixedwingPositionControl() :
 	_fw_pos_ctrl_status_pub(nullptr),
 
 	/* publication ID */
-	_attitude_setpoint_id(0),
+	_attitude_setpoint_id(nullptr),
 
 	/* states */
 	_ctrl_state(),
@@ -1101,7 +1102,7 @@ void FixedwingPositionControl::get_waypoint_heading_distance(float heading, floa
 
 	if (flag_init) {
 		// on init set previous waypoint HDG_HOLD_SET_BACK_DIST meters behind us
-		waypoint_from_heading_and_distance(_global_pos.lat, _global_pos.lon, heading + 180.0f * M_DEG_TO_RAD_F ,
+		waypoint_from_heading_and_distance(_global_pos.lat, _global_pos.lon, heading + 180.0f * M_DEG_TO_RAD_F,
 						   HDG_HOLD_SET_BACK_DIST,
 						   &temp_prev.lat, &temp_prev.lon);
 
@@ -2338,21 +2339,21 @@ FixedwingPositionControl::task_main()
 					_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max_rad, _parameters.man_pitch_max_rad);
 				}
 
-                if (!(_control_mode.flag_control_offboard_enabled &&
-                      !(_control_mode.flag_control_position_enabled ||
-                    _control_mode.flag_control_velocity_enabled ||
-                    _control_mode.flag_control_acceleration_enabled))) {
+				if (!_control_mode.flag_control_offboard_enabled ||
+				    _control_mode.flag_control_position_enabled ||
+				    _control_mode.flag_control_velocity_enabled ||
+				    _control_mode.flag_control_acceleration_enabled) {
 
-                    /* lazily publish the setpoint only once available */
-                    if (_attitude_sp_pub != nullptr) {
-                        /* publish the attitude setpoint */
-                        orb_publish(_attitude_setpoint_id, _attitude_sp_pub, &_att_sp);
+					/* lazily publish the setpoint only once available */
+					if (_attitude_sp_pub != nullptr) {
+						/* publish the attitude setpoint */
+						orb_publish(_attitude_setpoint_id, _attitude_sp_pub, &_att_sp);
 
-                    } else if (_attitude_setpoint_id) {
-                        /* advertise and publish */
-                        _attitude_sp_pub = orb_advertise(_attitude_setpoint_id, &_att_sp);
-                    }
-                }
+					} else if (_attitude_setpoint_id) {
+						/* advertise and publish */
+						_attitude_sp_pub = orb_advertise(_attitude_setpoint_id, &_att_sp);
+					}
+				}
 
 				/* XXX check if radius makes sense here */
 				float turn_distance = _l1_control.switch_distance(100.0f);

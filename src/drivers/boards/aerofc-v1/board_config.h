@@ -50,47 +50,41 @@
 #include <nuttx/compiler.h>
 #include <stdint.h>
 
-#include <stm32.h>
-#include <arch/board/board.h>
-
 /****************************************************************************************************
  * Definitions
  ****************************************************************************************************/
 /* Configuration ************************************************************************************/
 
-#define UDID_START		0x1FFF7A10
-
 /* PX4FMU GPIOs ***********************************************************************************/
-/* LEDs
- *
- * PC4     BLUE_LED                  D4 Blue LED cathode
- * PC5     RED_LED                   D5 Red LED cathode
-*/
-#define GPIO_LED1              (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN12)
-#define GPIO_LED2              (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN10)
-#define GPIO_BLUE_LED GPIO_LED1
-#define GPIO_RED_LED  GPIO_LED2
+/* LEDs */
+#define GPIO_LED1		(GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN12)
+#define GPIO_LED2		(GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN10)
 
-#define GPIO_SENSORS_POWER		(GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_SET|GPIO_PORTD|GPIO_PIN13)
+#define GPIO_VDD_5V_SENSORS_EN	(GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_SET|GPIO_PORTD|GPIO_PIN13)
 
 /*
  * I2C busses
  *
  * Peripheral   Port     Signal Name               CONN
- * I2C1_SDA     PB9     I2C1_SDA                  J2-4,9,16,21 mpu6050, U4 MS6507
- * I2C1_SDL     PB8     I2C1_SCL                  J2-3,10,15,22 mpu6050, U4 MS6507
+ * I2C1_SDA     PB9
+ * I2C1_SDL     PB8
  *
- * I2C2_SDA     PB11    Sonar Echo/I2C_SDA        JP2-31,32
- * I2C2_SDL     PB10    Sonar Trig/I2C_SCL        JP2-29,30
+ * I2C2_SDA     PB11
+ * I2C2_SDL     PB10
  *
- * I2C3_SDA     PC9     COMPASS_I2C3_SDA          JP1-27,28
- * I2C3_SDL     PA8     COMPASS_I2C3_SCL          JP1-25,26
+ * I2C3_SDA     PC9
+ * I2C3_SDL     PA8
  *
  */
+
 #define PX4_I2C_BUS_EXPANSION	1
 #define PX4_I2C_BUS_ONBOARD		3
 
-#define PX4_I2C_OBDEV_HMC5883	0x1E
+#define PX4_I2C_OBDEV_HMC5883	0x1e
+
+#define GPIO_SPI_CS_MPU6500		(GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_SET|GPIO_PORTA|GPIO_PIN4)
+#define PX4_SPI_BUS_SENSORS	1
+#define PX4_SPIDEV_MPU			1
 
 /*
  * ADC channels
@@ -105,13 +99,17 @@
  * ADC defines just to not break sensors.cpp build, battery voltage and current
  * will be read in another way in future.
  */
-#define ADC_BATTERY_VOLTAGE_CHANNEL    0
+#define ADC_BATTERY_VOLTAGE_CHANNEL    1
 #define ADC_BATTERY_CURRENT_CHANNEL    ((uint8_t)(-1))
+
+/* Define Battery 1 Voltage Divider
+ * Use Default for A per V
+ */
+
+#define BOARD_BATTERY1_V_DIV (9.0f)
 
 #define DIRECT_PWM_OUTPUT_CHANNELS	1
 #define BOARD_HAS_PWM	0
-
-#define BOARD_FMU_GPIO_TAB {{0, 0, 0}}
 
 /* USB OTG FS
  *
@@ -133,11 +131,18 @@
 
 #define	BOARD_NAME "AEROFC_V1"
 
-#define GPIO_SPI_CS_MPU6500		(GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_SET|GPIO_PORTA|GPIO_PIN4)
-#define PX4_SPI_BUS_SENSORS	1
-#define PX4_SPIDEV_MPU			1
-
 #define  FLASH_BASED_PARAMS
+
+/*
+ * The following defined is a workaround and replaces CONFIG_ARCH_BOARD_AEROFC_V1
+ * in the PX4 shared source code. #ifdef ONFIG_ARCH_BOARD_xxxx should never be added
+ * to the PX4 code base. Instead board_config.h should provide logical conditional
+ * compilation control based on features. I.E. BORD_HAS_xxxx
+ * See https://github.com/PX4/Firmware/pull/5893#pullrequestreview-9651688
+ * todo:This and TAP_ESC_NO_VERIFY_CONFIG needs to be removed from the code base
+ * when final HW is debugged to dermine the root cause of ignoring the verify
+ */
+#define TAP_ESC_NO_VERIFY_CONFIG /* This board can not tolerated verifying the tap esc got it's config */
 
 __BEGIN_DECLS
 
@@ -180,57 +185,7 @@ extern void stm32_usbinitialize(void);
 
 extern int board_sdio_initialize(void);
 
-/****************************************************************************
- * Name: nsh_archinitialize
- *
- * Description:
- *   Perform architecture specific initialization for NSH.
- *
- *   CONFIG_NSH_ARCHINIT=y :
- *     Called from the NSH library
- *
- *   CONFIG_BOARD_INITIALIZE=y, CONFIG_NSH_LIBRARY=y, &&
- *   CONFIG_NSH_ARCHINIT=n :
- *     Called from board_initialize().
- *
- ****************************************************************************/
-
-#ifdef CONFIG_NSH_LIBRARY
-int nsh_archinitialize(void);
-#endif
-
-
-/************************************************************************************
- * Name: board_pwr_init()
- *
- * Description:
- *   Called to configure power control for the tap-v1 board.
- *
- * Input Parameters:
- *   stage- 0 for boot, 1 for board init
- *
- ************************************************************************************/
-
-void board_pwr_init(int stage);
-
-/****************************************************************************
- * Name: board_pwr_button_down
- *
- * Description:
- *   Called to Read the logical state of the power button
- ****************************************************************************/
-
-bool board_pwr_button_down(void);
-
-/****************************************************************************
- * Name: board_pwr
- *
- * Description:
- *   Called to turn on or off the TAP
- *
- ****************************************************************************/
-
-void board_pwr(bool on_not_off);
+#include "../common/board_common.h"
 
 #endif /* __ASSEMBLY__ */
 

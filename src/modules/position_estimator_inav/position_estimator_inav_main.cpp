@@ -40,6 +40,7 @@
  * @author Christoph Tobler <toblech@student.ethz.ch>
  */
 #include <px4_posix.h>
+#include <px4_tasks.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -66,7 +67,6 @@
 #include <systemlib/err.h>
 #include <systemlib/mavlink_log.h>
 #include <geo/geo.h>
-#include <systemlib/systemlib.h>
 #include <drivers/drv_hrt.h>
 #include <platforms/px4_defines.h>
 
@@ -119,7 +119,6 @@ static void usage(const char *reason)
 	}
 
 	PX4_INFO("usage: position_estimator_inav {start|stop|status} [-v]\n");
-	return;
 }
 
 /**
@@ -153,7 +152,7 @@ int position_estimator_inav_main(int argc, char *argv[])
 		position_estimator_inav_task = px4_task_spawn_cmd("position_estimator_inav",
 					       SCHED_DEFAULT, SCHED_PRIORITY_MAX - 5, 4600,
 					       position_estimator_inav_thread_main,
-					       (argv && argc > 2) ? (char *const *) &argv[2] : (char *const *) NULL);
+					       (argv && argc > 2) ? (char *const *) &argv[2] : (char *const *) nullptr);
 		return 0;
 	}
 
@@ -385,7 +384,7 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 
 	/* advertise */
 	orb_advert_t vehicle_local_position_pub = orb_advertise(ORB_ID(vehicle_local_position), &local_pos);
-	orb_advert_t vehicle_global_position_pub = NULL;
+	orb_advert_t vehicle_global_position_pub = nullptr;
 
 	struct position_estimator_inav_params params;
 	memset(&params, 0, sizeof(params));
@@ -649,7 +648,12 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 					yaw_comp[0] = - params.flow_module_offset_y * (flow_gyrospeed[2] - gyro_offset_filtered[2]);
 					yaw_comp[1] = params.flow_module_offset_x * (flow_gyrospeed[2] - gyro_offset_filtered[2]);
 
-					/* convert raw flow to angular flow (rad/s) */
+					/*
+					 * Convert raw flow from the optical_flow uORB topic (rad) to angular flow (rad/s)
+					 * Note that the optical_flow uORB topic defines positive delta angles as produced by RH rotations
+					 * around the correspdonding body axes.
+					 */
+
 					float flow_ang[2];
 
 					/* check for vehicle rates setpoint - it below threshold -> dont subtract -> better hover */
@@ -661,25 +665,27 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 
 					float rate_threshold = 0.15f;
 
+					/* calculate the angular flow rate produced by a negative velocity along the X body axis */
 					if (fabsf(rates_setpoint.pitch) < rate_threshold) {
 						//warnx("[inav] test ohne comp");
-						flow_ang[0] = (flow.pixel_flow_x_integral / (float)flow.integration_timespan * 1000000.0f) *
+						flow_ang[0] = (-flow.pixel_flow_y_integral / (float)flow.integration_timespan * 1000000.0f) *
 							      params.flow_k;//for now the flow has to be scaled (to small)
 
 					} else {
 						//warnx("[inav] test mit comp");
 						//calculate flow [rad/s] and compensate for rotations (and offset of flow-gyro)
-						flow_ang[0] = ((flow.pixel_flow_x_integral - flow.gyro_x_rate_integral) / (float)flow.integration_timespan * 1000000.0f
+						flow_ang[0] = (-(flow.pixel_flow_y_integral - flow.gyro_y_rate_integral) / (float)flow.integration_timespan * 1000000.0f
 							       + gyro_offset_filtered[0]) * params.flow_k;//for now the flow has to be scaled (to small)
 					}
 
+					/* calculate the angular flow rate produced by a negative velocity along the Y body axis */
 					if (fabsf(rates_setpoint.roll) < rate_threshold) {
-						flow_ang[1] = (flow.pixel_flow_y_integral / (float)flow.integration_timespan * 1000000.0f) *
+						flow_ang[1] = (flow.pixel_flow_x_integral / (float)flow.integration_timespan * 1000000.0f) *
 							      params.flow_k;//for now the flow has to be scaled (to small)
 
 					} else {
 						//calculate flow [rad/s] and compensate for rotations (and offset of flow-gyro)
-						flow_ang[1] = ((flow.pixel_flow_y_integral - flow.gyro_y_rate_integral) / (float)flow.integration_timespan * 1000000.0f
+						flow_ang[1] = ((flow.pixel_flow_x_integral - flow.gyro_x_rate_integral) / (float)flow.integration_timespan * 1000000.0f
 							       + gyro_offset_filtered[1]) * params.flow_k;//for now the flow has to be scaled (to small)
 					}
 
@@ -1376,7 +1382,7 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 
 				global_pos.pressure_alt = sensor.baro_alt_meter;
 
-				if (vehicle_global_position_pub == NULL) {
+				if (vehicle_global_position_pub == nullptr) {
 					vehicle_global_position_pub = orb_advertise(ORB_ID(vehicle_global_position), &global_pos);
 
 				} else {

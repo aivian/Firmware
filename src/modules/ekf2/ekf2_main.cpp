@@ -75,7 +75,6 @@
 #include <uORB/topics/wind_estimate.h>
 #include <uORB/topics/estimator_status.h>
 #include <uORB/topics/ekf2_innovations.h>
-#include <uORB/topics/actuator_armed.h>
 #include <uORB/topics/ekf2_replay.h>
 #include <uORB/topics/optical_flow.h>
 #include <uORB/topics/distance_sensor.h>
@@ -289,7 +288,7 @@ private:
 };
 
 Ekf2::Ekf2():
-	SuperBlock(NULL, "EKF"),
+	SuperBlock(nullptr, "EKF"),
 	_replay_mode(false),
 	_publish_replay_mode(0),
 	_att_pub(nullptr),
@@ -554,7 +553,7 @@ void Ekf2::task_main()
 
 				if (mag_time_ms - _mag_time_ms_last_used > _params->sensor_interval_min_ms) {
 					float mag_sample_count_inv = 1.0f / (float)_mag_sample_count;
-					float mag_data_avg_ga[3] = {_mag_data_sum[0] *mag_sample_count_inv , _mag_data_sum[1] *mag_sample_count_inv , _mag_data_sum[2] *mag_sample_count_inv};
+					float mag_data_avg_ga[3] = {_mag_data_sum[0] *mag_sample_count_inv, _mag_data_sum[1] *mag_sample_count_inv, _mag_data_sum[2] *mag_sample_count_inv};
 					_ekf.setMagData(1000 * (uint64_t)mag_time_ms, mag_data_avg_ga);
 					_mag_time_ms_last_used = mag_time_ms;
 					_mag_time_sum_ms = 0;
@@ -585,7 +584,7 @@ void Ekf2::task_main()
 
 				if (balt_time_ms - _balt_time_ms_last_used > (uint32_t)_params->sensor_interval_min_ms) {
 					float balt_data_avg = _balt_data_sum / (float)_balt_sample_count;
-					_ekf.setBaroData(1000 * (uint64_t)balt_time_ms, &balt_data_avg);
+					_ekf.setBaroData(1000 * (uint64_t)balt_time_ms, balt_data_avg);
 					_balt_time_ms_last_used = balt_time_ms;
 					_balt_time_sum_ms = 0;
 					_balt_sample_count = 0;
@@ -625,7 +624,7 @@ void Ekf2::task_main()
 
 		if (fuse_airspeed) {
 			float eas2tas = airspeed.true_airspeed_m_s / airspeed.indicated_airspeed_m_s;
-			_ekf.setAirspeedData(airspeed.timestamp, &airspeed.true_airspeed_m_s, &eas2tas);
+			_ekf.setAirspeedData(airspeed.timestamp, airspeed.true_airspeed_m_s, eas2tas);
 		}
 
 		// only fuse synthetic sideslip measurements if conditions are met
@@ -649,7 +648,7 @@ void Ekf2::task_main()
 		}
 
 		if (range_finder_updated) {
-			_ekf.setRangeData(range_finder.timestamp, &range_finder.current_distance);
+			_ekf.setRangeData(range_finder.timestamp, range_finder.current_distance);
 		}
 
 		// get external vision data
@@ -712,6 +711,9 @@ void Ekf2::task_main()
 				ctrl_state.roll_rate = _lp_roll_rate.apply(gyro_rad[0]);
 				ctrl_state.pitch_rate = _lp_pitch_rate.apply(gyro_rad[1]);
 				ctrl_state.yaw_rate = _lp_yaw_rate.apply(gyro_rad[2]);
+				ctrl_state.roll_rate_bias = gyro_bias[0];
+				ctrl_state.pitch_rate_bias = gyro_bias[1];
+				ctrl_state.yaw_rate_bias = gyro_bias[2];
 
 				// Velocity in body frame
 				Vector3f v_n(velocity);
@@ -853,8 +855,8 @@ void Ekf2::task_main()
 			Vector3f pos_var, vel_var;
 			_ekf.get_pos_var(pos_var);
 			_ekf.get_vel_var(vel_var);
-			lpos.eph = sqrt(pos_var(0) + pos_var(1));
-			lpos.epv = sqrt(pos_var(2));
+			lpos.eph = sqrtf(pos_var(0) + pos_var(1));
+			lpos.epv = sqrtf(pos_var(2));
 
 			// get state reset information of position and velocity
 			_ekf.get_posD_reset(&lpos.delta_z, &lpos.z_reset_counter);
@@ -896,10 +898,10 @@ void Ekf2::task_main()
 				global_pos.vel_e = velocity[1]; // Ground east velocity, m/s
 				global_pos.vel_d = velocity[2]; // Ground downside velocity, m/s
 
-				global_pos.yaw = euler(2); // Yaw in radians -PI..+PI.
+				global_pos.yaw = euler.psi(); // Yaw in radians -PI..+PI.
 
-				global_pos.eph = sqrt(pos_var(0) + pos_var(1));; // Standard deviation of position estimate horizontally
-				global_pos.epv = sqrt(pos_var(2)); // Standard deviation of position vertically
+				global_pos.eph = sqrtf(pos_var(0) + pos_var(1));; // Standard deviation of position estimate horizontally
+				global_pos.epv = sqrtf(pos_var(2)); // Standard deviation of position vertically
 
 				if (lpos.dist_bottom_valid) {
 					global_pos.terrain_alt = lpos.ref_alt - terrain_vpos; // Terrain altitude in m, WGS84

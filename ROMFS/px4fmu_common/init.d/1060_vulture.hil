@@ -1,0 +1,18 @@
+#!nsh
+#
+# @name vulture (flightgear)
+#
+# @type Simulation
+#
+# @output MAIN1 aileron
+# @output MAIN2 elevator
+# @output MAIN3 rudder
+# @output MAIN4 throttle
+#
+# @maintainer John Bird <jjbird@psu.edu>
+#
+
+sh /etc/init.d/rc.fw_defaults
+
+set HIL yes
+set MIXER vulture

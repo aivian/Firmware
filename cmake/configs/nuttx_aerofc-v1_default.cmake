@@ -1,6 +1,10 @@
 include(nuttx/px4_impl_nuttx)
 
+px4_nuttx_configure(HWCLASS m4 CONFIG nsh ROMFS y ROMFSROOT px4fmu_common)
+
 set(CMAKE_TOOLCHAIN_FILE ${PX4_SOURCE_DIR}/cmake/toolchains/Toolchain-arm-none-eabi.cmake)
+
+set(config_uavcan_num_ifaces 2)
 
 set(config_module_list
 	#
@@ -8,7 +12,6 @@ set(config_module_list
 	#
 	drivers/device
 	drivers/stm32
-	drivers/stm32/adc
 	drivers/led
 	drivers/px4fmu
 	drivers/boards/aerofc-v1
@@ -18,6 +21,7 @@ set(config_module_list
 	drivers/hmc5883
 	drivers/gps
 	drivers/ist8310
+	drivers/aerofc_adc
 	modules/sensors
 	# dummy tone alarm
 	modules/dummy
@@ -30,6 +34,8 @@ set(config_module_list
 	systemcmds/param
 	systemcmds/perf
 	systemcmds/pwm
+	systemcmds/esc_calib
+	systemcmds/hardfault_log
 	systemcmds/motor_test
 	systemcmds/reboot
 	systemcmds/top
@@ -95,6 +101,7 @@ set(config_module_list
 	lib/terrain_estimation
 	lib/runway_takeoff
 	lib/tailsitter_recovery
+	lib/version
 	lib/DriverFramework/framework
 	lib/rc
 	platforms/nuttx

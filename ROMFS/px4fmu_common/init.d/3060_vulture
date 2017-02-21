@@ -1,0 +1,24 @@
+#!nsh
+#
+# @name Cathartiformes
+#
+# @type Standard Plane
+#
+# @maintainer John Bird <jjbird@psu.edu>
+#
+
+sh /etc/init.d/rc.fw_defaults
+ 
+
+if [ $AUTOCNF == yes ]
+then
+	param set FW_AIRSPD_MAX 30
+	param set FW_AIRSPD_MIN 10
+	param set FW_AIRSPD_TRIM 13
+        param set FW_PR_P 0.1
+        FW_PR_I 0.02
+
+fi
+
+set PWM_OUT 7
+set MIXER vulture
