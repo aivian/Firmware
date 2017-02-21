@@ -1324,7 +1324,8 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 	bool in_air_alt_control = (!_vehicle_land_detected.landed &&
 				   (_control_mode.flag_control_auto_enabled ||
 				    _control_mode.flag_control_velocity_enabled ||
-				    _control_mode.flag_control_altitude_enabled));
+				    _control_mode.flag_control_altitude_enabled ||
+                   (_control_mode.flag_control_offboard_enabled && _avia_sp.enabled)));
 
 	/* update TECS filters */
 	_tecs.update_state(_global_pos.alt, _ctrl_state.airspeed, _R_nb,
@@ -1424,11 +1425,6 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 		    _pos_sp_triplet.current.cruising_speed > 0.1f) {
 			mission_airspeed = _pos_sp_triplet.current.cruising_speed;
 		}
-
-        //if (_control_mode.flag_control_offboard_enabled && !_offboard_control_mode.ignore_bodyrate) {
-        if (_control_mode.flag_control_offboard_enabled) {
-            mission_airspeed = _avia_sp.v_ias;
-        }
 
 		float mission_throttle = _parameters.throttle_cruise;
 
@@ -2095,7 +2091,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 		_att_sp.roll_body = _manual.y * _parameters.man_roll_max_rad;
 		_att_sp.yaw_body = 0;
 
-	} else {
+    } else {
 		_control_mode_current = FW_POSCTRL_MODE_OTHER;
 
 		/* do not publish the setpoint */
@@ -2111,6 +2107,20 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 		}
 	}
 
+    if (_control_mode.flag_control_offboard_enabled && _avia_sp.enabled) {
+        setpoint = true;
+
+        float mission_airspeed = _avia_sp.v_ias;
+		float mission_throttle = _parameters.throttle_cruise;
+        if (!_offboard_control_mode.ignore_thrust) {
+            mission_throttle = _avia_sp.throttle;
+        }
+        tecs_update_pitch_throttle(pos_sp_triplet.current.alt, calculate_target_airspeed(mission_airspeed), eas2tas,
+                       math::radians(_parameters.pitch_limit_min), math::radians(_parameters.pitch_limit_max),
+                       _parameters.throttle_min, _parameters.throttle_max, mission_throttle,
+                       false, math::radians(_parameters.pitch_limit_min), _global_pos.alt, ground_speed);
+    }
+    
 	/* Copy thrust output for publication */
 	if (_vehicle_status.engine_failure || _vehicle_status.engine_failure_cmd) {
 		/* Set thrust to 0 to minimize damage */
@@ -2167,6 +2177,8 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 
 	// manual attitude control
 	use_tecs_pitch &= !(_control_mode_current == FW_POSCTRL_MODE_OTHER);
+
+    use_tecs_pitch |= (_avia_sp.enabled && _control_mode.flag_control_offboard_enabled);
 
 	if (use_tecs_pitch) {
 		_att_sp.pitch_body = get_tecs_pitch();
@@ -2239,6 +2251,7 @@ FixedwingPositionControl::task_main()
 	_sensor_combined_sub = orb_subscribe(ORB_ID(sensor_combined));
 	_control_mode_sub = orb_subscribe(ORB_ID(vehicle_control_mode));
 	_vehicle_command_sub = orb_subscribe(ORB_ID(vehicle_command));
+	_vehicle_fw_avia_sub = orb_subscribe(ORB_ID(vehicle_fw_avia_setpoint));
 	_vehicle_status_sub = orb_subscribe(ORB_ID(vehicle_status));
 	_vehicle_land_detected_sub = orb_subscribe(ORB_ID(vehicle_land_detected));
 	_params_sub = orb_subscribe(ORB_ID(parameter_update));
@@ -2372,7 +2385,7 @@ FixedwingPositionControl::task_main()
 				_att_sp.q_d[3] = q(3);
 				_att_sp.q_d_valid = true;
 
-				if (!_control_mode.flag_control_offboard_enabled ||
+				if ((_control_mode.flag_control_offboard_enabled && _avia_sp.enabled) ||
 				    _control_mode.flag_control_position_enabled ||
 				    _control_mode.flag_control_velocity_enabled ||
 				    _control_mode.flag_control_acceleration_enabled) {

@@ -930,8 +930,9 @@ FixedwingAttitudeControl::task_main()
 				   && fabsf(_parameters.flaps_scale) > 0.01f) {
 				flap_control = _att_sp.apply_flaps ? 1.0f * _parameters.flaps_scale : 0.0f;
 			}
-            // I've hijacked body rate mode for a new offboard mode. Check for it
-            if (_vcontrol_mode.flag_control_offboard_enabled && !_offboard_control_mode.ignore_bodyrate) {
+
+            // Check for AVIA mode
+            if (_vcontrol_mode.flag_control_offboard_enabled && _avia_sp.enabled) {
                 flap_control = _avia_sp.flap;
             }
 
@@ -973,7 +974,7 @@ FixedwingAttitudeControl::task_main()
 			}
 
 			/* decide if in stabilized or full manual control */
-			if (_vcontrol_mode.flag_control_rates_enabled) {
+			if (_vcontrol_mode.flag_control_rates_enabled || (_vcontrol_mode.flag_control_offboard_enabled && _avia_sp.enabled)) {
 				/* scale around tuning airspeed */
 				float airspeed;
 
@@ -1042,11 +1043,12 @@ FixedwingAttitudeControl::task_main()
 				yaw_sp = _att_sp.yaw_body;
 				throttle_sp = _att_sp.thrust;
 
-                // I've hijacked body rate mode for a new offboard mode, check for it.
-//                if (_vcontrol_mode.flag_control_offboard_enabled && !_offboard_control_mode.ignore_bodyrate) {
-                if (_vcontrol_mode.flag_control_offboard_enabled) {
+                // check for avia setpoint
+                if (_vcontrol_mode.flag_control_offboard_enabled && _avia_sp.enabled) {
                     roll_sp = _avia_sp.roll_body;
-                    throttle_sp = _avia_sp.throttle;
+                    if (!_offboard_control_mode.ignore_thrust) {
+                        throttle_sp = _avia_sp.throttle;
+                    }
                 }
 
 				/* allow manual yaw in manual modes */
@@ -1098,7 +1100,7 @@ FixedwingAttitudeControl::task_main()
 				_yaw_ctrl.set_coordinated_method(_parameters.y_coordinated_method);
 
 				/* Run attitude controllers */
-				if (_vcontrol_mode.flag_control_attitude_enabled) {
+				if (_vcontrol_mode.flag_control_attitude_enabled || (_vcontrol_mode.flag_control_offboard_enabled && _avia_sp.enabled)) {
 					if (PX4_ISFINITE(roll_sp) && PX4_ISFINITE(pitch_sp)) {
 						_roll_ctrl.control_attitude(control_input);
 						_pitch_ctrl.control_attitude(control_input);
@@ -1272,7 +1274,8 @@ FixedwingAttitudeControl::task_main()
 			/* Only publish if any of the proper modes are enabled */
 			if (_vcontrol_mode.flag_control_rates_enabled ||
 			    _vcontrol_mode.flag_control_attitude_enabled ||
-			    _vcontrol_mode.flag_control_manual_enabled) {
+			    _vcontrol_mode.flag_control_manual_enabled ||
+                (_vcontrol_mode.flag_control_offboard_enabled && _avia_sp.enabled)) {
 				/* publish the actuator controls */
 				if (_actuators_0_pub != nullptr) {
 					orb_publish(_actuators_id, _actuators_0_pub, &_actuators);
