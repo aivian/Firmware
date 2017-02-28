@@ -41,6 +41,7 @@
 #include <px4_config.h>
 #include <px4_defines.h>
 #include <drivers/drv_hrt.h>
+#include <float.h>
 
 #include "LandDetector.h"
 
@@ -123,16 +124,19 @@ void LandDetector::_cycle()
 
 	_update_state();
 
+	float alt_max_prev = _altitude_max;
+	_altitude_max = _get_max_altitude();
+
 	bool freefallDetected = (_state == LandDetectionState::FREEFALL);
 	bool landDetected = (_state == LandDetectionState::LANDED);
 	bool ground_contactDetected = (_state == LandDetectionState::GROUND_CONTACT);
-
 
 	// Only publish very first time or when the result has changed.
 	if ((_landDetectedPub == nullptr) ||
 	    (_landDetected.freefall != freefallDetected) ||
 	    (_landDetected.landed != landDetected) ||
-	    (_landDetected.ground_contact != ground_contactDetected)) {
+	    (_landDetected.ground_contact != ground_contactDetected) ||
+	    (fabsf(_landDetected.alt_max - alt_max_prev) > FLT_EPSILON)) {
 
 		if (!landDetected && _landDetected.landed) {
 			// We did take off
@@ -152,6 +156,7 @@ void LandDetector::_cycle()
 		_landDetected.freefall = (_state == LandDetectionState::FREEFALL);
 		_landDetected.landed = (_state == LandDetectionState::LANDED);
 		_landDetected.ground_contact = (_state == LandDetectionState::GROUND_CONTACT);
+		_landDetected.alt_max = _altitude_max;
 
 		int instance;
 		orb_publish_auto(ORB_ID(vehicle_land_detected), &_landDetectedPub, &_landDetected,
@@ -168,7 +173,6 @@ void LandDetector::_cycle()
 		_taskIsRunning = false;
 	}
 }
-
 void LandDetector::_check_params(const bool force)
 {
 	bool updated;

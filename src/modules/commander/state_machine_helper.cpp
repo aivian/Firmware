@@ -77,6 +77,7 @@ static const char reason_no_rc_and_no_offboard[] = "no RC and no offboard";
 static const char reason_no_gps[] = "no gps";
 static const char reason_no_gps_cmd[] = "no gps cmd";
 static const char reason_no_home[] = "no home";
+static const char reason_no_local_position[] = "no local position";
 static const char reason_no_datalink[] = "no datalink";
 
 // This array defines the arming state transitions. The rows are the new state, and the columns
@@ -375,17 +376,9 @@ main_state_transition(struct vehicle_status_s *status, main_state_t new_main_sta
 	switch (new_main_state) {
 	case commander_state_s::MAIN_STATE_MANUAL:
 	case commander_state_s::MAIN_STATE_STAB:
-		ret = TRANSITION_CHANGED;
-		break;
-
 	case commander_state_s::MAIN_STATE_ACRO:
 	case commander_state_s::MAIN_STATE_RATTITUDE:
-
-		/* ACRO and RATTITUDE only implemented in MC */
-		if (status->is_rotary_wing) {
-			ret = TRANSITION_CHANGED;
-		}
-
+		ret = TRANSITION_CHANGED;
 		break;
 
 	case commander_state_s::MAIN_STATE_ALTCTL:
@@ -428,8 +421,6 @@ main_state_transition(struct vehicle_status_s *status, main_state_t new_main_sta
 
 	case commander_state_s::MAIN_STATE_AUTO_MISSION:
 	case commander_state_s::MAIN_STATE_AUTO_RTL:
-	case commander_state_s::MAIN_STATE_AUTO_TAKEOFF:
-	case commander_state_s::MAIN_STATE_AUTO_LAND:
 
 		/* need global position and home position */
 		if (status_flags->condition_global_position_valid && status_flags->condition_home_position_valid) {
@@ -438,13 +429,21 @@ main_state_transition(struct vehicle_status_s *status, main_state_t new_main_sta
 
 		break;
 
+	case commander_state_s::MAIN_STATE_AUTO_TAKEOFF:
+	case commander_state_s::MAIN_STATE_AUTO_LAND:
+
+		/* need local position */
+		if (status_flags->condition_local_position_valid) {
+			ret = TRANSITION_CHANGED;
+		}
+
+		break;
+
 	case commander_state_s::MAIN_STATE_OFFBOARD:
 
 		/* need offboard signal
-		 * OFFBOARD only implemented in MC
 		 */
-		if (!status_flags->offboard_control_signal_lost
-		    && status->is_rotary_wing) {
+		if (!status_flags->offboard_control_signal_lost) {
 
 			ret = TRANSITION_CHANGED;
 		}
@@ -932,14 +931,13 @@ bool set_nav_state(struct vehicle_status_s *status,
 
 	case commander_state_s::MAIN_STATE_AUTO_TAKEOFF:
 
-		/* require global position and home */
+		/* require local position */
 
 		if (status->engine_failure) {
 			status->nav_state = vehicle_status_s::NAVIGATION_STATE_AUTO_LANDENGFAIL;
 
-		} else if (status_flags->gps_failure || (!status_flags->condition_global_position_valid ||
-				!status_flags->condition_home_position_valid)) {
-			enable_failsafe(status, old_failsafe, mavlink_log_pub, reason_no_gps);
+		} else if (!status_flags->condition_local_position_valid) {
+			enable_failsafe(status, old_failsafe, mavlink_log_pub, reason_no_local_position);
 
 			if (status_flags->condition_local_position_valid) {
 				status->nav_state = vehicle_status_s::NAVIGATION_STATE_AUTO_LAND;
@@ -959,14 +957,13 @@ bool set_nav_state(struct vehicle_status_s *status,
 
 	case commander_state_s::MAIN_STATE_AUTO_LAND:
 
-		/* require global position and home */
+		/* require local position */
 
 		if (status->engine_failure) {
 			status->nav_state = vehicle_status_s::NAVIGATION_STATE_AUTO_LANDENGFAIL;
 
-		} else if (status_flags->gps_failure || (!status_flags->condition_global_position_valid ||
-				!status_flags->condition_home_position_valid)) {
-			enable_failsafe(status, old_failsafe, mavlink_log_pub, reason_no_gps);
+		} else if (!status_flags->condition_local_position_valid) {
+			enable_failsafe(status, old_failsafe, mavlink_log_pub, reason_no_local_position);
 
 			if (status_flags->condition_local_altitude_valid) {
 				status->nav_state = vehicle_status_s::NAVIGATION_STATE_DESCEND;
