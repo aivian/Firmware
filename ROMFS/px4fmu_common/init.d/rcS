@@ -642,6 +642,42 @@ then
 		if param compare SYS_COMPANION 921600
 		then
 			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 921600 -m onboard -r 80000 -x
+
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s HEARTBEAT -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s STATUSTEXT -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s COMMAND_LONG -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s SYS_STATUS -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s HIGHRES_IMU -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ATTITUDE -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ATTITUDE_QUATERNION -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s VFR_HUD -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s GPS_RAW_INT -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s SYSTEM_TIME -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s TIMESYNC -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s GLOBAL_POSITION_INT -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s LOCAL_POSITION_NED -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s LOCAL_POSITION_NED_COV -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ESTIMATOR_STATUS -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s HOME_POSITION -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s SERVO_OUTPUT_RAW_0 -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s SERVO_OUTPUT_RAW_1 -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s HIL_CONTROLS -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s HIL_ACTUATOR_CONTROLS -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s POSITION_TARGET_GLOBAL_INT -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ATTITUDE_TARGET -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s RC_CHANNELS_RAW -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s MANUAL_CONTROL -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ACTUATOR_CONTROL_TARGET_0 -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ACTUATOR_CONTROL_TARGET_1 -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ACTUATOR_CONTROL_TARGET_2 -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ACTUATOR_CONTROL_TARGET_3 -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s NAMED_VALUE_FLOAT -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s NAV_CONTROLLER_OUTPUT -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s EXTENDED_SYS_STATE -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ALTITUDE -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s WIND_COV -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s MOUNT_ORIENTATION -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s HIGH_LATENCY -r 20
 		fi
 		if param compare SYS_COMPANION 57600
 		then
@@ -682,7 +718,43 @@ then
 		fi
 		if param compare SYS_COMPANION 1921600
 		then
-			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 921600 -r 20000
+			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 921600 -r 20
+
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s HEARTBEAT -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s STATUSTEXT -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s COMMAND_LONG -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s SYS_STATUS -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s HIGHRES_IMU -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ATTITUDE -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ATTITUDE_QUATERNION -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s VFR_HUD -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s GPS_RAW_INT -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s SYSTEM_TIME -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s TIMESYNC -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s GLOBAL_POSITION_INT -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s LOCAL_POSITION_NED -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s LOCAL_POSITION_NED_COV -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ESTIMATOR_STATUS -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s HOME_POSITION -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s SERVO_OUTPUT_RAW_0 -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s SERVO_OUTPUT_RAW_1 -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s HIL_CONTROLS -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s HIL_ACTUATOR_CONTROLS -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s POSITION_TARGET_GLOBAL_INT -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ATTITUDE_TARGET -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s RC_CHANNELS_RAW -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s MANUAL_CONTROL -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ACTUATOR_CONTROL_TARGET_0 -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ACTUATOR_CONTROL_TARGET_1 -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ACTUATOR_CONTROL_TARGET_2 -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ACTUATOR_CONTROL_TARGET_3 -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s NAMED_VALUE_FLOAT -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s NAV_CONTROLLER_OUTPUT -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s EXTENDED_SYS_STATE -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s ALTITUDE -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s WIND_COV -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s MOUNT_ORIENTATION -r 20
+            mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s HIGH_LATENCY -r 20
 		fi
 		if param compare SYS_COMPANION 1500000
 		then
