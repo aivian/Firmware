@@ -420,7 +420,7 @@ then
 	#
 	# Sensors System (start before Commander so Preflight checks are properly run)
 	#
-	sh /etc/init.d/rc.sensors
+	sh /etc/init.d/rc.sensors_avia_ps
 
 	# Needs to be this early for in-air-restarts
 	if [ $OUTPUT_MODE == hil ]

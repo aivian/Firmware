@@ -112,7 +112,8 @@
 class MEASAirspeed : public Airspeed
 {
 public:
-	MEASAirspeed(int bus, int address = I2C_ADDRESS_MS4525DO, const char *path = PATH_MS4525);
+	MEASAirspeed(int bus, int address = I2C_ADDRESS_MS4515DO, const char *path = PATH_MS4515);
+        int first_measure();
 
 protected:
 
@@ -154,12 +155,12 @@ MEASAirspeed::MEASAirspeed(int bus, int address, const char *path) : Airspeed(bu
     switch (address)
     {
         case I2C_ADDRESS_MS4525DO:
-            P_min = -1.0f;
-            P_max = 1.0f;
+            P_min = -0.18064f;
+            P_max = 0.18064f;
             break;
         case I2C_ADDRESS_MS5525DSO:
-            P_min = -1.0;
-            P_max = 1.0;
+            P_min = -0.18064f;
+            P_max = 0.18064f;
             break;
         case I2C_ADDRESS_MS4515DO:
             P_min = -0.18064f;
@@ -171,13 +172,6 @@ MEASAirspeed::MEASAirspeed(int bus, int address, const char *path) : Airspeed(bu
 int
 MEASAirspeed::measure()
 {
-    /*
-    if (get_address() == I2C_ADDRESS_MS4515DO)
-    {
-        return OK;
-    }
-    */
-
 	int ret;
 
 	/*
@@ -194,6 +188,12 @@ MEASAirspeed::measure()
 }
 
 int
+MEASAirspeed::first_measure()
+{
+    return measure();
+}
+
+int
 MEASAirspeed::collect()
 {
 	int	ret = -EIO;
@@ -206,7 +206,7 @@ MEASAirspeed::collect()
 
 	ret = transfer(nullptr, 0, &val[0], 4);
 
-	if (ret < 0 && !(get_address() == I2C_ADDRESS_MS4515DO)) {
+	if (ret < 0) {
 		perf_count(_comms_errors);
 		perf_end(_sample_perf);
 		return ret;
@@ -217,12 +217,11 @@ MEASAirspeed::collect()
 	switch (status) {
 	case 0:
 		break;
-
 	case 1:
-
+		return -EAGAIN;
 	/* fallthrough */
 	case 2:
-
+		return -EAGAIN;
 	/* fallthrough */
 	case 3:
 		perf_count(_comms_errors);
@@ -249,12 +248,12 @@ MEASAirspeed::collect()
 	  are generated when the bottom port is used as the static
 	  port on the pitot and top port is used as the dynamic port
 	 */
-    float diff_press_PSI;
-    if (get_address() == I2C_ADDRESS_MS4515DO) {
-        diff_press_PSI = -((dp_raw - 0.05f * 16383) * (P_max - P_min) / (0.9f * 16383) + P_min);
-    } else {
-        diff_press_PSI = -((dp_raw - 0.1f * 16383) * (P_max - P_min) / (0.8f * 16383) + P_min);
-    }
+        float diff_press_PSI;
+        if (get_address() == I2C_ADDRESS_MS4515DO) {
+            diff_press_PSI = -((dp_raw - 0.05f * 16383) * (P_max - P_min) / (0.9f * 16383) + P_min);
+        } else {
+            diff_press_PSI = -((dp_raw - 0.1f * 16383) * (P_max - P_min) / (0.8f * 16383) + P_min);
+        }
 	float diff_press_pa_raw = diff_press_PSI * PSI_to_Pa;
 
 	// correct for 5V rail voltage if possible
@@ -462,28 +461,16 @@ start(int i2c_bus)
 	}
 
 	/* create the driver, try the MS4515DO first */
-    g_dev = new MEASAirspeed(i2c_bus, I2C_ADDRESS_MS4515DO, PATH_MS4515);
+        g_dev = new MEASAirspeed(i2c_bus, I2C_ADDRESS_MS4515DO, PATH_MS4515);
 
 	/* check if the MS4515DO was instantiated */
 	if (g_dev == nullptr) {
-		goto fail;
+	    goto fail;
 	}
 
-	/* try the MS4525DSO next if init fails */
-	if (OK != g_dev->Airspeed::init()) {
-		delete g_dev;
-            g_dev = new MEASAirspeed(i2c_bus, I2C_ADDRESS_MS4525DO, PATH_MS4525);
-
-		/* check if the MS5525DSO was instantiated */
-		if (g_dev == nullptr) {
-			goto fail;
-		}
-
-		/* both versions failed if the init for the MS5525DSO fails, give up */
-		if (OK != g_dev->Airspeed::init()) {
-			goto fail;
-		}
-	}
+        if (OK != g_dev->Airspeed::init()) {
+            goto fail;
+        }
 
 	/* set the poll rate to default, starts automatic data collection */
 	fd = open(PATH_MS4515, O_RDONLY);
@@ -492,7 +479,6 @@ start(int i2c_bus)
 		goto fail;
 	}
 
-    ioctl(fd, SENSORIOCSPOLLRATE, SENSOR_POLLRATE_DEFAULT);
 	if (ioctl(fd, SENSORIOCSPOLLRATE, SENSOR_POLLRATE_DEFAULT) < 0) {
 		goto fail;
 	}
@@ -541,7 +527,7 @@ test()
 	int fd = open(PATH_MS4515, O_RDONLY);
 
 	if (fd < 0) {
-		err(1, "%s open failed (try 'meas_airspeed start' if the driver is not running", PATH_MS4515);
+		err(1, "%s open failed (try 'meas_airspeed start' if the driver is not running", PATH_MS4525);
 	}
 
 	/* do a simple demand read */
@@ -598,7 +584,7 @@ test()
 void
 reset()
 {
-	int fd = open(PATH_MS4525, O_RDONLY);
+	int fd = open(PATH_MS4515, O_RDONLY);
 
 	if (fd < 0) {
 		err(1, "failed ");
