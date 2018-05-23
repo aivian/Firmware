@@ -1246,7 +1246,7 @@ Mavlink::handle_message(const mavlink_message_t *msg)
 	/* handle packet with log component */
 	_mavlink_log_handler->handle_message(msg);
 
-	if (get_forwarding_on()) {
+	if (get_forwarding_on() && msg->msgid == 131) {
 		/* forward any messages to other mavlink instances */
 		Mavlink::forward_message(msg, this);
 	}
