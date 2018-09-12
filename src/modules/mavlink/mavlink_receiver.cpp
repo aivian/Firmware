@@ -116,6 +116,7 @@ MavlinkReceiver::MavlinkReceiver(Mavlink *parent) :
 	_actuator_controls_pub(nullptr),
 	_global_vel_sp_pub(nullptr),
 	_att_sp_pub(nullptr),
+    _avia_sp_pub(nullptr),
 	_rates_sp_pub(nullptr),
 	_force_sp_pub(nullptr),
 	_pos_sp_triplet_pub(nullptr),
@@ -145,6 +146,7 @@ MavlinkReceiver::MavlinkReceiver(Mavlink *parent) :
 	_hil_local_proj_ref{},
 	_offboard_control_mode{},
 	_att_sp{},
+    _avia_sp{},
 	_rates_sp{},
 	_time_offset_avg_alpha(0.8),
 	_time_offset(0),
@@ -1214,6 +1216,7 @@ MavlinkReceiver::handle_message_set_attitude_target(mavlink_message_t *msg)
 		 */
 		bool ignore_bodyrate_msg = (bool)(set_attitude_target.type_mask & 0x7);
 		bool ignore_attitude_msg = (bool)(set_attitude_target.type_mask & (1 << 7));
+        bool avia_setpoint_enabled = (bool)(set_attitude_target.type_mask & 0x8);
 
 		if (ignore_bodyrate_msg && ignore_attitude_msg && !_offboard_control_mode.ignore_thrust) {
 			/* Message want's us to ignore everything except thrust: only ignore if previously ignored */
@@ -1272,30 +1275,27 @@ MavlinkReceiver::handle_message_set_attitude_target(mavlink_message_t *msg)
 					} else {
 						orb_publish(ORB_ID(vehicle_attitude_setpoint), _att_sp_pub, &_att_sp);
 					}
+                }
+                if (avia_setpoint_enabled) {
+
+                    /* WE'VE HIJACKED THE BODY RATE DATA FOR THE AVIA MESSAGE */
+                    _avia_sp.timestamp = hrt_absolute_time();
+
+                    _avia_sp.roll_body = set_attitude_target.body_roll_rate;
+                    _avia_sp.v_ias = set_attitude_target.body_pitch_rate;
+                    _avia_sp.flap = set_attitude_target.body_yaw_rate;
+                
+                    if (!_offboard_control_mode.ignore_thrust) { // dont't overwrite thrust if it's invalid
+                        _avia_sp.throttle = set_attitude_target.thrust;
+                    }
 				}
+                _avia_sp.enabled = avia_setpoint_enabled;
+                if (_avia_sp_pub == nullptr) {
+                    _avia_sp_pub = orb_advertise(ORB_ID(vehicle_fw_avia_setpoint), &_avia_sp);
 
-				/* Publish attitude rate setpoint if bodyrate and thrust ignore bits are not set */
-				///XXX add support for ignoring individual axes
-				if (!(_offboard_control_mode.ignore_bodyrate)) {
-					_rates_sp.timestamp = hrt_absolute_time();
-
-					if (!ignore_bodyrate_msg) { // only copy att rates sp if message contained new data
-						_rates_sp.roll = set_attitude_target.body_roll_rate;
-						_rates_sp.pitch = set_attitude_target.body_pitch_rate;
-						_rates_sp.yaw = set_attitude_target.body_yaw_rate;
-					}
-
-					if (!_offboard_control_mode.ignore_thrust) { // dont't overwrite thrust if it's invalid
-						_rates_sp.thrust = set_attitude_target.thrust;
-					}
-
-					if (_rates_sp_pub == nullptr) {
-						_rates_sp_pub = orb_advertise(ORB_ID(vehicle_rates_setpoint), &_rates_sp);
-
-					} else {
-						orb_publish(ORB_ID(vehicle_rates_setpoint), _rates_sp_pub, &_rates_sp);
-					}
-				}
+                } else {
+                    orb_publish(ORB_ID(vehicle_fw_avia_setpoint), _avia_sp_pub, &_avia_sp);
+                }
 			}
 
 		}

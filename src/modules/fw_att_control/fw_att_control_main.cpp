@@ -63,6 +63,7 @@
 #include <uORB/topics/manual_control_setpoint.h>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/vehicle_attitude_setpoint.h>
+#include <uORB/topics/vehicle_fw_avia_setpoint.h>
 #include <uORB/topics/vehicle_control_mode.h>
 #include <uORB/topics/vehicle_global_position.h>
 #include <uORB/topics/vehicle_land_detected.h>
@@ -114,12 +115,14 @@ private:
 	int		_control_task;			/**< task handle */
 
 	int		_att_sp_sub;			/**< vehicle attitude setpoint */
+	int		_avia_sp_sub;			/**< avia fixed wing setpoint */
 	int		_battery_status_sub;		/**< battery status subscription */
 	int		_ctrl_state_sub;		/**< control state subscription */
 	int		_global_pos_sub;		/**< global position subscription */
 	int		_manual_sub;			/**< notification of manual control updates */
 	int		_params_sub;			/**< notification of parameter updates */
 	int		_vcontrol_mode_sub;		/**< vehicle status subscription */
+	int		_offboard_control_mode_sub;		/**< vehicle status subscription */
 	int		_vehicle_land_detected_sub;	/**< vehicle land detected subscription */
 	int		_vehicle_status_sub;		/**< vehicle status subscription */
 
@@ -138,7 +141,9 @@ private:
 	struct control_state_s				_ctrl_state;	/**< control state */
 	struct manual_control_setpoint_s		_manual;		/**< r/c channel data */
 	struct vehicle_attitude_setpoint_s		_att_sp;		/**< vehicle attitude setpoint */
+	struct vehicle_fw_avia_setpoint_s       _avia_sp;		/**< vehicle avia fixed wing setpoint */
 	struct vehicle_control_mode_s			_vcontrol_mode;		/**< vehicle control mode */
+	struct offboard_control_mode_s          _offboard_control_mode;		/**< offboard control mode */
 	struct vehicle_global_position_s		_global_pos;		/**< global position */
 	struct vehicle_land_detected_s			_vehicle_land_detected;	/**< vehicle land detected */
 	struct vehicle_rates_setpoint_s			_rates_sp;	/* attitude rates setpoint */
@@ -149,6 +154,7 @@ private:
 	perf_counter_t	_nonfinite_output_perf;		/**< performance counter for non finite output */
 
 	bool		_setpoint_valid;		/**< flag if the position control setpoint is valid */
+	bool		_avia_setpoint_valid;		/**< flag if the position control setpoint is valid */
 	bool		_debug;				/**< if set to true, print debug output */
 
 	float _flaps_applied;
@@ -357,12 +363,14 @@ FixedwingAttitudeControl::FixedwingAttitudeControl() :
 
 	/* subscriptions */
 	_att_sp_sub(-1),
+	_avia_sp_sub(-1),
 	_battery_status_sub(-1),
 	_ctrl_state_sub(-1),
 	_global_pos_sub(-1),
 	_manual_sub(-1),
 	_params_sub(-1),
 	_vcontrol_mode_sub(-1),
+	_offboard_control_mode_sub(-1),
 	_vehicle_land_detected_sub(-1),
 	_vehicle_status_sub(-1),
 
@@ -387,6 +395,7 @@ FixedwingAttitudeControl::FixedwingAttitudeControl() :
 #endif
 	/* states */
 	_setpoint_valid(false),
+	_avia_setpoint_valid(false),
 	_debug(false),
 	_flaps_applied(0),
 	_flaperons_applied(0),
@@ -398,12 +407,14 @@ FixedwingAttitudeControl::FixedwingAttitudeControl() :
 	_actuators = {};
 	_actuators_airframe = {};
 	_att_sp = {};
+	_avia_sp = {};
 	_battery_status = {};
 	_ctrl_state = {};
 	_global_pos = {};
 	_manual = {};
 	_rates_sp = {};
 	_vcontrol_mode = {};
+	_offboard_control_mode= {};
 	_vehicle_land_detected = {};
 	_vehicle_status = {};
 
@@ -610,13 +621,17 @@ void
 FixedwingAttitudeControl::vehicle_control_mode_poll()
 {
 	bool vcontrol_mode_updated;
+	bool offboard_control_mode_updated;
 
 	/* Check if vehicle control mode has changed */
 	orb_check(_vcontrol_mode_sub, &vcontrol_mode_updated);
+	orb_check(_offboard_control_mode_sub, &offboard_control_mode_updated);
 
 	if (vcontrol_mode_updated) {
-
 		orb_copy(ORB_ID(vehicle_control_mode), _vcontrol_mode_sub, &_vcontrol_mode);
+	}
+	if (offboard_control_mode_updated) {
+		orb_copy(ORB_ID(offboard_control_mode), _offboard_control_mode_sub, &_offboard_control_mode);
 	}
 }
 
@@ -639,11 +654,17 @@ FixedwingAttitudeControl::vehicle_setpoint_poll()
 {
 	/* check if there is a new setpoint */
 	bool att_sp_updated;
+	bool avia_sp_updated;
 	orb_check(_att_sp_sub, &att_sp_updated);
+	orb_check(_avia_sp_sub, &avia_sp_updated);
 
 	if (att_sp_updated) {
 		orb_copy(ORB_ID(vehicle_attitude_setpoint), _att_sp_sub, &_att_sp);
 		_setpoint_valid = true;
+	}
+	if (avia_sp_updated) {
+		orb_copy(ORB_ID(vehicle_fw_avia_setpoint), _avia_sp_sub, &_avia_sp);
+		_avia_setpoint_valid = true;
 	}
 }
 
@@ -722,6 +743,7 @@ FixedwingAttitudeControl::task_main()
 	 * do subscriptions
 	 */
 	_att_sp_sub = orb_subscribe(ORB_ID(vehicle_attitude_setpoint));
+	_avia_sp_sub = orb_subscribe(ORB_ID(vehicle_fw_avia_setpoint));
 	_ctrl_state_sub = orb_subscribe(ORB_ID(control_state));
 	_vcontrol_mode_sub = orb_subscribe(ORB_ID(vehicle_control_mode));
 	_params_sub = orb_subscribe(ORB_ID(parameter_update));
@@ -909,6 +931,11 @@ FixedwingAttitudeControl::task_main()
 				flap_control = _att_sp.apply_flaps ? 1.0f * _parameters.flaps_scale : 0.0f;
 			}
 
+            // Check for AVIA mode
+            if (_vcontrol_mode.flag_control_offboard_enabled && _avia_sp.enabled) {
+                flap_control = _avia_sp.flap;
+            }
+
 			// move the actual control value continuous with time, full flap travel in 1sec
 			if (fabsf(_flaps_applied - flap_control) > 0.01f) {
 				_flaps_applied += (_flaps_applied - flap_control) < 0 ? deltaT : -deltaT;
@@ -947,7 +974,7 @@ FixedwingAttitudeControl::task_main()
 			}
 
 			/* decide if in stabilized or full manual control */
-			if (_vcontrol_mode.flag_control_rates_enabled) {
+			if (_vcontrol_mode.flag_control_rates_enabled || (_vcontrol_mode.flag_control_offboard_enabled && _avia_sp.enabled)) {
 				/* scale around tuning airspeed */
 				float airspeed;
 
@@ -1013,6 +1040,14 @@ FixedwingAttitudeControl::task_main()
 				yaw_sp = _att_sp.yaw_body;
 				throttle_sp = _att_sp.thrust;
 
+                // check for avia setpoint
+                if (_vcontrol_mode.flag_control_offboard_enabled && _avia_sp.enabled) {
+                    roll_sp = _avia_sp.roll_body;
+                    if (!_offboard_control_mode.ignore_thrust) {
+                        throttle_sp = _avia_sp.throttle;
+                    }
+                }
+
 				/* allow manual yaw in manual modes */
 				if (_vcontrol_mode.flag_control_manual_enabled) {
 					yaw_manual = _manual.r;
@@ -1066,7 +1101,7 @@ FixedwingAttitudeControl::task_main()
 				_yaw_ctrl.set_coordinated_method(_parameters.y_coordinated_method);
 
 				/* Run attitude controllers */
-				if (_vcontrol_mode.flag_control_attitude_enabled) {
+				if (_vcontrol_mode.flag_control_attitude_enabled || (_vcontrol_mode.flag_control_offboard_enabled && _avia_sp.enabled)) {
 					if (PX4_ISFINITE(roll_sp) && PX4_ISFINITE(pitch_sp)) {
 						_roll_ctrl.control_attitude(control_input);
 						_pitch_ctrl.control_attitude(control_input);
@@ -1240,7 +1275,8 @@ FixedwingAttitudeControl::task_main()
 			/* Only publish if any of the proper modes are enabled */
 			if (_vcontrol_mode.flag_control_rates_enabled ||
 			    _vcontrol_mode.flag_control_attitude_enabled ||
-			    _vcontrol_mode.flag_control_manual_enabled) {
+			    _vcontrol_mode.flag_control_manual_enabled ||
+                (_vcontrol_mode.flag_control_offboard_enabled && _avia_sp.enabled)) {
 				/* publish the actuator controls */
 				if (_actuators_0_pub != nullptr) {
 					orb_publish(_actuators_id, _actuators_0_pub, &_actuators);

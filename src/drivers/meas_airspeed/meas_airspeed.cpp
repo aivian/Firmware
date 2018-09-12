@@ -97,6 +97,9 @@
 /* The MS5525DSO address is 111011Cx, where C is the complementary value of the pin CSB */
 #define I2C_ADDRESS_MS5525DSO	0x77	//0x77/* 7-bit address, addr. pin pulled low */
 #define PATH_MS5525		"/dev/ms5525"
+/* The MS4515 address is 0x46 for the K option */
+#define I2C_ADDRESS_MS4515DO   0x46    /**< 7-bit address. Depends on the order code (this is for code "K") */
+#define PATH_MS4515 "/dev/ms4515"
 
 /* Register address */
 #define ADDR_READ_MR			0x00	/* write to this address to start conversion */
@@ -109,7 +112,8 @@
 class MEASAirspeed : public Airspeed
 {
 public:
-	MEASAirspeed(int bus, int address = I2C_ADDRESS_MS4525DO, const char *path = PATH_MS4525);
+	MEASAirspeed(int bus, int address = I2C_ADDRESS_MS4515DO, const char *path = PATH_MS4515);
+        int first_measure();
 
 protected:
 
@@ -130,6 +134,9 @@ protected:
 
 	int _t_system_power;
 	struct system_power_s system_power;
+
+        float P_min;
+        float P_max;
 };
 
 /*
@@ -141,8 +148,25 @@ MEASAirspeed::MEASAirspeed(int bus, int address, const char *path) : Airspeed(bu
 			CONVERSION_INTERVAL, path),
 	_filter(MEAS_RATE, MEAS_DRIVER_FILTER_FREQ),
 	_t_system_power(-1),
-	system_power{}
+	system_power{},
+        P_min(-1.0f),
+        P_max(1.0f)
 {
+    switch (address)
+    {
+        case I2C_ADDRESS_MS4525DO:
+            P_min = -0.18064f;
+            P_max = 0.18064f;
+            break;
+        case I2C_ADDRESS_MS5525DSO:
+            P_min = -0.18064f;
+            P_max = 0.18064f;
+            break;
+        case I2C_ADDRESS_MS4515DO:
+            P_min = -0.18064f;
+            P_max = 0.18064f;
+            break;
+    }
 }
 
 int
@@ -161,6 +185,12 @@ MEASAirspeed::measure()
 	}
 
 	return ret;
+}
+
+int
+MEASAirspeed::first_measure()
+{
+    return measure();
 }
 
 int
@@ -186,19 +216,14 @@ MEASAirspeed::collect()
 
 	switch (status) {
 	case 0:
-		// Normal Operation. Good Data Packet
 		break;
-
 	case 1:
-		// Reserved
 		return -EAGAIN;
-
+	/* fallthrough */
 	case 2:
-		// Stale Data. Data has been fetched since last measurement cycle.
 		return -EAGAIN;
-
+	/* fallthrough */
 	case 3:
-		// Fault Detected
 		perf_count(_comms_errors);
 		perf_end(_sample_perf);
 		return -EAGAIN;
@@ -214,8 +239,6 @@ MEASAirspeed::collect()
 
 	// Calculate differential pressure. As its centered around 8000
 	// and can go positive or negative
-	const float P_min = -1.0f;
-	const float P_max = 1.0f;
 	const float PSI_to_Pa = 6894.757f;
 	/*
 	  this equation is an inversion of the equation in the
@@ -225,7 +248,12 @@ MEASAirspeed::collect()
 	  are generated when the bottom port is used as the static
 	  port on the pitot and top port is used as the dynamic port
 	 */
-	float diff_press_PSI = -((dp_raw - 0.1f * 16383) * (P_max - P_min) / (0.8f * 16383) + P_min);
+        float diff_press_PSI;
+        if (get_address() == I2C_ADDRESS_MS4515DO) {
+            diff_press_PSI = -((dp_raw - 0.05f * 16383) * (P_max - P_min) / (0.9f * 16383) + P_min);
+        } else {
+            diff_press_PSI = -((dp_raw - 0.1f * 16383) * (P_max - P_min) / (0.8f * 16383) + P_min);
+        }
 	float diff_press_pa_raw = diff_press_PSI * PSI_to_Pa;
 
 	// correct for 5V rail voltage if possible
@@ -339,7 +367,8 @@ MEASAirspeed::cycle()
 void
 MEASAirspeed::voltage_correction(float &diff_press_pa, float &temperature)
 {
-#if defined(ADC_SCALED_V5_SENSE)
+#if defined(CONFIG_ARCH_BOARD_PX4FMU_V2) || defined(CONFIG_ARCH_BOARD_PX4FMU_V4) \
+	|| defined(CONFIG_ARCH_BOARD_MINDPX_V2)
 
 	if (_t_system_power == -1) {
 		_t_system_power = orb_subscribe(ORB_ID(system_power));
@@ -393,7 +422,7 @@ MEASAirspeed::voltage_correction(float &diff_press_pa, float &temperature)
 	}
 
 	temperature -= voltage_diff * temp_slope;
-#endif // defined(ADC_SCALED_V5_SENSE)
+#endif // defined(CONFIG_ARCH_BOARD_PX4FMU_V2) || defined(CONFIG_ARCH_BOARD_PX4FMU_V4)
 }
 
 /**
@@ -401,6 +430,12 @@ MEASAirspeed::voltage_correction(float &diff_press_pa, float &temperature)
  */
 namespace meas_airspeed
 {
+
+/* oddly, ERROR is not defined for c++ */
+#ifdef ERROR
+# undef ERROR
+#endif
+const int ERROR = -1;
 
 MEASAirspeed	*g_dev = nullptr;
 
@@ -425,32 +460,20 @@ start(int i2c_bus)
 		errx(1, "already started");
 	}
 
-	/* create the driver, try the MS4525DO first */
-	g_dev = new MEASAirspeed(i2c_bus, I2C_ADDRESS_MS4525DO, PATH_MS4525);
+	/* create the driver, try the MS4515DO first */
+        g_dev = new MEASAirspeed(i2c_bus, I2C_ADDRESS_MS4515DO, PATH_MS4515);
 
-	/* check if the MS4525DO was instantiated */
+	/* check if the MS4515DO was instantiated */
 	if (g_dev == nullptr) {
-		goto fail;
+	    goto fail;
 	}
 
-	/* try the MS5525DSO next if init fails */
-	if (OK != g_dev->Airspeed::init()) {
-		delete g_dev;
-		g_dev = new MEASAirspeed(i2c_bus, I2C_ADDRESS_MS5525DSO, PATH_MS5525);
-
-		/* check if the MS5525DSO was instantiated */
-		if (g_dev == nullptr) {
-			goto fail;
-		}
-
-		/* both versions failed if the init for the MS5525DSO fails, give up */
-		if (OK != g_dev->Airspeed::init()) {
-			goto fail;
-		}
-	}
+        if (OK != g_dev->Airspeed::init()) {
+            goto fail;
+        }
 
 	/* set the poll rate to default, starts automatic data collection */
-	fd = open(PATH_MS4525, O_RDONLY);
+	fd = open(PATH_MS4515, O_RDONLY);
 
 	if (fd < 0) {
 		goto fail;
@@ -469,7 +492,7 @@ fail:
 		g_dev = nullptr;
 	}
 
-	errx(1, "no MS4525 airspeed sensor connected");
+	errx(1, "no MS4515 airspeed sensor connected");
 }
 
 /**
@@ -501,7 +524,7 @@ test()
 	ssize_t sz;
 	int ret;
 
-	int fd = open(PATH_MS4525, O_RDONLY);
+	int fd = open(PATH_MS4515, O_RDONLY);
 
 	if (fd < 0) {
 		err(1, "%s open failed (try 'meas_airspeed start' if the driver is not running", PATH_MS4525);
@@ -561,7 +584,7 @@ test()
 void
 reset()
 {
-	int fd = open(PATH_MS4525, O_RDONLY);
+	int fd = open(PATH_MS4515, O_RDONLY);
 
 	if (fd < 0) {
 		err(1, "failed ");

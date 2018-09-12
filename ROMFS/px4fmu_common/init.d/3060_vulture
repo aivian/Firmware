@@ -20,5 +20,5 @@ then
 
 fi
 
-set PWM_OUT 7
 set MIXER vulture
+set MIXER_AUX vulture_flaps
