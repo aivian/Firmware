@@ -599,7 +599,7 @@ then
 			then
 				set MAVLINK_F "-r 1200 -d /dev/ttyS1"
 				# Start MAVLink on Wifi (ESP8266 port)
-				mavlink start -r 20000 -m config -b 921600 -d /dev/ttyS0
+				mavlink start -r 20000 -m config -b 921600 -d /dev/ttyS0 -f
 			fi
 
 			if ver hwcmp AEROFC_V1
@@ -618,7 +618,7 @@ then
 	if [ "x$MAVLINK_F" == xnone ]
 	then
 	else
-		mavlink start ${MAVLINK_F}
+		mavlink start ${MAVLINK_F} -f
 	fi
 	unset MAVLINK_F
 
@@ -637,7 +637,7 @@ then
 		if param compare SYS_COMPANION 20
 		then
 			syslink start
-			mavlink start -d /dev/bridge0 -b 57600 -m osd -r 40000
+			mavlink start -d /dev/bridge0 -b 57600 -m osd -r 40000 -f
 		fi
 		if param compare SYS_COMPANION 921600
 		then
@@ -681,44 +681,44 @@ then
 		fi
 		if param compare SYS_COMPANION 57600
 		then
-			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 57600 -m onboard -r 5000 -x
+			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 57600 -m onboard -r 5000 -x -f
 		fi
 		if param compare SYS_COMPANION 460800
 		then
-			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 460800 -m onboard -r 5000 -x
+			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 460800 -m onboard -r 5000 -x -f
 		fi
 		if param compare SYS_COMPANION 157600
 		then
-			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 57600 -m osd -r 1000
+			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 57600 -m osd -r 1000 -f
 		fi
 		if param compare SYS_COMPANION 257600
 		then
-			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 57600 -m magic -r 5000 -x
+			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 57600 -m magic -r 5000 -x -f
 		fi
 		if param compare SYS_COMPANION 319200
 		then
-			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 19200 -r 1000
+			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 19200 -r 1000 -f
 		fi
 		if param compare SYS_COMPANION 338400
 		then
-			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 38400 -r 1000
+			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 38400 -r 1000 -f
 		fi
 		if param compare SYS_COMPANION 357600
 		then
-			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 57600 -r 1000
+			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 57600 -r 1000 -f
 		fi
 		if param compare SYS_COMPANION 3115200
 		then
-			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 115200 -r 1000
+			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 115200 -r 1000 -f
 		fi
 		if param compare SYS_COMPANION 419200
 		then
 			iridiumsbd start -d /dev/ttyS2
-			mavlink start -d /dev/iridium -b 19200 -m iridium -r 10
+			mavlink start -d /dev/iridium -b 19200 -m iridium -r 10 -f
 		fi
 		if param compare SYS_COMPANION 1921600
 		then
-			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 921600 -r 20
+			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 921600 -r 20 -f
 
             mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s HEARTBEAT -r 20
             mavlink stream -d ${MAVLINK_COMPANION_DEVICE} -s STATUSTEXT -r 20
@@ -759,7 +759,7 @@ then
 		fi
 		if param compare SYS_COMPANION 1500000
 		then
-			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 1500000 -m onboard -r 10000 -x
+			mavlink start -d ${MAVLINK_COMPANION_DEVICE} -b 1500000 -m onboard -r 10000 -x -f
 		fi
 	fi
 
@@ -858,11 +858,8 @@ then
 	then
 	else
 		# Start MAVLink
-		mavlink start -r 800000 -d /dev/ttyACM0 -m config -x
+		mavlink start -r 800000 -d /dev/ttyACM0 -m config -x -f
 	fi
-
-	# Start MAVLink
-	mavlink start -r 800000 -d /dev/ttyACM0 -m config -x -f
 
 	#
 	# Logging
