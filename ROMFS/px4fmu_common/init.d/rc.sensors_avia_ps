@@ -22,6 +22,15 @@ if hmc5883 -C -T -I -R 4 start
 then
 fi
 
+if ver hwcmp AEROFC_V1
+then
+	# Aero FC uses separate driver
+else
+	if adc start
+	then
+	fi
+fi
+
 # Internal SPI bus ICM-20608-G
 if mpu6000 -T 20608 start
 then
