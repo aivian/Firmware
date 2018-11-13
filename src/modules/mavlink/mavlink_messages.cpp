@@ -64,6 +64,7 @@
 #include <uORB/topics/cpuload.h>
 #include <uORB/topics/debug_key_value.h>
 #include <uORB/topics/differential_pressure.h>
+#include <uORB/topics/sensor_baro.h>
 #include <uORB/topics/distance_sensor.h>
 #include <uORB/topics/estimator_status.h>
 #include <uORB/topics/fw_pos_ctrl_status.h>
@@ -709,6 +710,9 @@ private:
 	MavlinkOrbSubscription *_differential_pressure_sub;
 	uint64_t _differential_pressure_time;
 
+	MavlinkOrbSubscription *_absolute_pressure_sub;
+	uint64_t _absolute_pressure_time;
+
 	uint64_t _accel_timestamp;
 	uint64_t _gyro_timestamp;
 	uint64_t _mag_timestamp;
@@ -724,6 +728,8 @@ protected:
 		_sensor_time(0),
 		_differential_pressure_sub(_mavlink->add_orb_subscription(ORB_ID(differential_pressure))),
 		_differential_pressure_time(0),
+		_absolute_pressure_sub(_mavlink->add_orb_subscription(ORB_ID(sensor_baro))),
+                _absolute_pressure_time(0),
 		_accel_timestamp(0),
 		_gyro_timestamp(0),
 		_mag_timestamp(0),
@@ -734,6 +740,7 @@ protected:
 	{
 		struct sensor_combined_s sensor = {};
 		struct differential_pressure_s differential_pressure = {};
+                struct sensor_baro_s absolute_pressure = {};
 
 		if (_sensor_sub->update(&_sensor_time, &sensor)) {
 			uint16_t fields_updated = 0;
@@ -763,6 +770,7 @@ protected:
 			}
 
 			_differential_pressure_sub->update(&_differential_pressure_time, &differential_pressure);
+                        _absolute_pressure_sub->update(&_absolute_pressure_time, &absolute_pressure);
 
 			mavlink_highres_imu_t msg = {};
 
@@ -776,7 +784,7 @@ protected:
 			msg.xmag = sensor.magnetometer_ga[0];
 			msg.ymag = sensor.magnetometer_ga[1];
 			msg.zmag = sensor.magnetometer_ga[2];
-			msg.abs_pressure = 0;
+			msg.abs_pressure = absolute_pressure.pressure * 100.0f;
 			msg.diff_pressure = differential_pressure.differential_pressure_raw_pa;
 			msg.pressure_alt = sensor.baro_alt_meter;
 			msg.temperature = sensor.baro_temp_celcius;
