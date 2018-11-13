@@ -18,3 +18,8 @@ fw_pos_control_l1 start
 # Start Land Detector
 #
 land_detector start fixedwing
+
+#
+# Start the wind estimator
+#
+#wind_estimator start

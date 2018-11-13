@@ -112,7 +112,8 @@
 class MEASAirspeed : public Airspeed
 {
 public:
-	MEASAirspeed(int bus, int address = I2C_ADDRESS_MS4525DO, const char *path = PATH_MS4525);
+	MEASAirspeed(int bus, int address = I2C_ADDRESS_MS4515DO, const char *path = PATH_MS4515);
+        int first_measure();
 
 protected:
 
@@ -154,12 +155,12 @@ MEASAirspeed::MEASAirspeed(int bus, int address, const char *path) : Airspeed(bu
     switch (address)
     {
         case I2C_ADDRESS_MS4525DO:
-            P_min = -1.0f;
-            P_max = 1.0f;
+            P_min = -0.18064f;
+            P_max = 0.18064f;
             break;
         case I2C_ADDRESS_MS5525DSO:
-            P_min = -1.0;
-            P_max = 1.0;
+            P_min = -0.18064f;
+            P_max = 0.18064f;
             break;
         case I2C_ADDRESS_MS4515DO:
             P_min = -0.18064f;
@@ -187,6 +188,12 @@ MEASAirspeed::measure()
 }
 
 int
+MEASAirspeed::first_measure()
+{
+    return measure();
+}
+
+int
 MEASAirspeed::collect()
 {
 	int	ret = -EIO;
@@ -210,12 +217,11 @@ MEASAirspeed::collect()
 	switch (status) {
 	case 0:
 		break;
-
 	case 1:
-
+		return -EAGAIN;
 	/* fallthrough */
 	case 2:
-
+		return -EAGAIN;
 	/* fallthrough */
 	case 3:
 		perf_count(_comms_errors);
@@ -459,24 +465,12 @@ start(int i2c_bus)
 
 	/* check if the MS4515DO was instantiated */
 	if (g_dev == nullptr) {
-		goto fail;
+	    goto fail;
 	}
 
-	/* try the MS4525DSO next if init fails */
-	if (OK != g_dev->Airspeed::init()) {
-		delete g_dev;
-                g_dev = new MEASAirspeed(i2c_bus, I2C_ADDRESS_MS4525DO, PATH_MS4525);
-
-		/* check if the MS5525DSO was instantiated */
-		if (g_dev == nullptr) {
-			goto fail;
-		}
-
-		/* both versions failed if the init for the MS5525DSO fails, give up */
-		if (OK != g_dev->Airspeed::init()) {
-			goto fail;
-		}
-	}
+        if (OK != g_dev->Airspeed::init()) {
+            goto fail;
+        }
 
 	/* set the poll rate to default, starts automatic data collection */
 	fd = open(PATH_MS4515, O_RDONLY);
@@ -530,7 +524,7 @@ test()
 	ssize_t sz;
 	int ret;
 
-	int fd = open(PATH_MS4525, O_RDONLY);
+	int fd = open(PATH_MS4515, O_RDONLY);
 
 	if (fd < 0) {
 		err(1, "%s open failed (try 'meas_airspeed start' if the driver is not running", PATH_MS4525);
@@ -590,7 +584,7 @@ test()
 void
 reset()
 {
-	int fd = open(PATH_MS4525, O_RDONLY);
+	int fd = open(PATH_MS4515, O_RDONLY);
 
 	if (fd < 0) {
 		err(1, "failed ");
